@@ -8,8 +8,6 @@
  */
 
 #include "Buttons.h"
-#include "Config_HW.h"
-#include "Config_SW.h"
 #include "Soundfont.h"
 #include "Light.h"
 #include "ConfigMenu.h"
@@ -46,16 +44,20 @@ extern uint8_t ledPins[];
 #endif
 #if defined STAR_LED
 extern uint8_t ledPins[];
-extern cRGB currentColor;
+extern uint32_t currentColor;
 //extern uint8_t currentColor[4]; //0:Red 1:Green 2:Blue 3:ColorID
 #endif
 #if defined PIXELBLADE or defined ADF_PIXIE_BLADE
 extern uint8_t ledPins[];
-extern cRGB color;
-extern cRGB currentColor;
+extern uint32_t color;
+extern uint32_t currentColor;
 #endif
 extern void HumRelaunch();
-extern void SinglePlay_Sound(uint8_t track);
+#ifdef USE_DFPLAYER
+  extern void SinglePlay_Sound(uint8_t track);
+#elif defined(USE_RAW_SPEAKER)
+  extern void SinglePlay_Sound(String track);
+#endif
 extern void LoopPlay_Sound(uint8_t track);
 extern void Pause_Sound();
 extern void Resume_Sound();
@@ -76,9 +78,9 @@ extern struct StoreStruct {
   uint8_t volume;// 0 to 31
   uint8_t soundFont;// as many as Sound font you have defined in Soundfont.h Max:253
   struct Profile {
-    cRGB mainColor;
-    cRGB clashColor;
-    cRGB blasterboltColor;
+    uint32_t mainColor;
+    uint32_t clashColor;
+    uint32_t blasterboltColor;
     uint16_t swingSensitivity;
     uint8_t flickerType;
     uint8_t poweronoffType;
@@ -90,7 +92,7 @@ extern bool fireblade;
 // ===               			BUTTONS CALLBACK FUNCTIONS                 			===
 // ====================================================================================
 
-void ConfigMenuButtonEventHandler(bool SaturateColor, ButtonActionEnum ButtonActionType, int8_t incrementSign=1){
+void ConfigMenuButtonEventHandler(bool SaturateColor, ButtonActionEnum ButtonActionType, int8_t incrementSign){
     if (ConfigModeSubStates == CS_VOLUME and ButtonActionType==SINGLE_CLICK) {
       play = true;
       confParseValue(storage.volume, 0, 30, 1*incrementSign);
@@ -110,7 +112,11 @@ void ConfigMenuButtonEventHandler(bool SaturateColor, ButtonActionEnum ButtonAct
         if (storage.sndProfile[storage.soundFont].flickerType==2 or storage.sndProfile[storage.soundFont].flickerType==3 or storage.sndProfile[storage.soundFont].flickerType==4) {fireblade=true;}
         else {fireblade=false;}
       #endif
-      SinglePlay_Sound(soundFont.getMenu((storage.soundFont)*NR_FILE_SF));
+      #ifdef USE_DFPLAYER
+        SinglePlay_Sound(soundFont.getMenu((storage.soundFont)*NR_FILE_SF));
+      #elif defined(USE_RAW_SPEAKER)
+        SinglePlay_Sound("10_font");
+      #endif
       //Serial.print("soundfont   "); Serial.print(storage.soundFont); Serial.print("  Offset:   ");Serial.println(soundFont.getMenu((storage.soundFont)*NR_FILE_SF));
       delay(150);    
     }
@@ -118,16 +124,14 @@ void ConfigMenuButtonEventHandler(bool SaturateColor, ButtonActionEnum ButtonAct
     else if (ConfigModeSubStates==CS_MAINCOLOR) {
       #ifdef GRAVITY_COLOR
         ColorMixing(storage.sndProfile[storage.soundFont].mainColor,modification,MAX_BRIGHTNESS, SaturateColor);
-      #else if COLOR_PROFILE
+      #elif defined COLOR_PROFILE
         if (ButtonActionType==SINGLE_CLICK){
           confParseValue(modification, 0, 14, incrementSign);
           modification = value;
           getColorFix(modification);
         }
       #endif
-      storage.sndProfile[storage.soundFont].mainColor.r=currentColor.r;
-      storage.sndProfile[storage.soundFont].mainColor.g=currentColor.g;
-      storage.sndProfile[storage.soundFont].mainColor.b=currentColor.b;
+      storage.sndProfile[storage.soundFont].mainColor = currentColor;
       lightOn(ledPins, -1, currentColor, NUMPIXELS/2, NUMPIXELS-6);
       delay(50);
     
@@ -135,32 +139,28 @@ void ConfigMenuButtonEventHandler(bool SaturateColor, ButtonActionEnum ButtonAct
     else if (ConfigModeSubStates==CS_CLASHCOLOR) {
       #ifdef GRAVITY_COLOR
         ColorMixing(storage.sndProfile[storage.soundFont].clashColor,modification,MAX_BRIGHTNESS, SaturateColor);
-      #else if COLOR_PROFILE
+      #elif defined COLOR_PROFILE
         if (ButtonActionType==SINGLE_CLICK){
           confParseValue(modification, 0, 14, incrementSign);
           modification = value;
           getColorFix(modification);
         }
       #endif 
-      storage.sndProfile[storage.soundFont].clashColor.r=currentColor.r;
-      storage.sndProfile[storage.soundFont].clashColor.g=currentColor.g;
-      storage.sndProfile[storage.soundFont].clashColor.b=currentColor.b;
+      storage.sndProfile[storage.soundFont].clashColor = currentColor;
       lightOn(ledPins, -1, currentColor, 1, NUMPIXELS/2-1);
       delay(50);
     }
     else if (ConfigModeSubStates==CS_BLASTCOLOR) {
       #ifdef GRAVITY_COLOR
         ColorMixing(storage.sndProfile[storage.soundFont].blasterboltColor,modification,MAX_BRIGHTNESS, SaturateColor);
-      #else if COLOR_PROFILE
+      #elif defined COLOR_PROFILE
         if (ButtonActionType==SINGLE_CLICK){
           confParseValue(modification, 0, 14, incrementSign);
           modification = value;
           getColorFix(modification);
         }
       #endif 
-      storage.sndProfile[storage.soundFont].blasterboltColor.r=currentColor.r;
-      storage.sndProfile[storage.soundFont].blasterboltColor.g=currentColor.g;
-      storage.sndProfile[storage.soundFont].blasterboltColor.b=currentColor.b;
+      storage.sndProfile[storage.soundFont].blasterboltColor = currentColor;
       lightOn(ledPins, -1, currentColor, NUMPIXELS*3/4-5, NUMPIXELS*3/4);
       delay(50);
     }
@@ -241,16 +241,29 @@ void mainClick() {
         SaberState=S_SLEEP;
         PrevSaberState=S_CONFIG;
         // play a beep 3 times
+        #ifdef USE_DFPLAYER
           SinglePlay_Sound(1);
           delay(500);
           SinglePlay_Sound(1);
           delay(500);    
           SinglePlay_Sound(1);
           delay(500);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("001-Up");
+          delay(500);
+          SinglePlay_Sound("001-Up");
+          delay(500);    
+          SinglePlay_Sound("001-Up");
+          delay(500);
+        #endif
     }
     #endif // DEEP_SLEEP
     if (ConfigModeSubStates != CS_FLICKERTYPE) {
-      SinglePlay_Sound(1);
+      #ifdef USE_DFPLAYER
+        SinglePlay_Sound(1);
+      #elif defined(USE_RAW_SPEAKER)
+        SinglePlay_Sound("001-Up");
+      #endif
       delay(50);
     }
     ConfigMenuButtonEventHandler(true, SINGLE_CLICK);
@@ -293,6 +306,7 @@ void mainClick() {
     else {
       jb_track++;
     }
+    // TODO: Add jukebox functionality to saber with custom sound
     SinglePlay_Sound(jb_track);
 #endif // SINGLEBUTTON
   }
@@ -491,7 +505,11 @@ void lockupClick() {
     ActionModeSubStates=AS_BLASTERDEFLECTPRESS;
 	} else if (SaberState==S_CONFIG) {
     if (ConfigModeSubStates != CS_FLICKERTYPE) {
-      SinglePlay_Sound(2);
+      #ifdef USE_DFPLAYER
+        SinglePlay_Sound(2);
+      #elif defined(USE_RAW_SPEAKER)
+        SinglePlaySound("002-Down");
+      #endif
       delay(50);
     }
       ConfigMenuButtonEventHandler(true, SINGLE_CLICK,-1);

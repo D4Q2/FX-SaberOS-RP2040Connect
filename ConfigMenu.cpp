@@ -6,11 +6,8 @@
  *      Author: neskw
  */
 #include "ConfigMenu.h"
-#include "Config_HW.h"
-#include "Config_SW.h"
 #include "Light.h"
 #include "Soundfont.h"
-
 
 // global Saber state and Sub State variables
 SaberStateEnum SaberState;
@@ -27,12 +24,16 @@ extern int16_t value;
 
 
 extern uint8_t ledPins[];
-extern cRGB currentColor;
+extern uint32_t currentColor;
 #if defined PIXELBLADE
-extern cRGB color;
+extern uint32_t color;
 #endif
 extern void HumRelaunch();
-extern void SinglePlay_Sound(uint8_t track);
+#ifdef USE_DFPLAYER
+  extern void SinglePlay_Sound(uint8_t track);
+#elif defined(USE_RAW_SPEAKER)
+  extern void SinglePlay_Sound(String track);
+#endif
 extern void LoopPlay_Sound(uint8_t track);
 extern void Pause_Sound();
 extern void Resume_Sound();
@@ -54,9 +55,9 @@ extern struct StoreStruct {
   uint8_t volume;// 0 to 31
   uint8_t soundFont;// as many as Sound font you have defined in Soundfont.h Max:253
   struct Profile {
-    cRGB mainColor;
-    cRGB clashColor;
-    cRGB blasterboltColor;
+    uint32_t mainColor;
+    uint32_t clashColor;
+    uint32_t blasterboltColor;
     uint16_t swingSensitivity;
     uint8_t flickerType;
     uint8_t poweronoffType;
@@ -81,11 +82,19 @@ void confParseValue(uint16_t variable, uint16_t min, uint16_t max,
 		value = min;
 	} else if (value == (int) min and play) {
 		play = false;
-		SinglePlay_Sound(10);
+    #ifdef USE_DFPLAYER
+		  SinglePlay_Sound(10); 
+    #elif defined(USE_RAW_SPEAKER)
+      SinglePlay_Sound("010-Min");
+    #endif
 		delay(150);
 	} else if (value == (int) max and play) {
 		play = false;
-		SinglePlay_Sound(9);
+    #ifdef USE_DFPLAYER
+		  SinglePlay_Sound(9);
+    #elif defined(USE_RAW_SPEAKER)
+      SinglePlay_Sound("009-Max");
+    #endif
 		delay(150);
 	}
 } //confParseValue
@@ -115,7 +124,11 @@ void NextConfigState(){
         ConfigModeSubStates=CS_VOLUME;
         BladeMeter(ledPins, storage.volume*100/30);
         AccentMeter(storage.volume*100/30);
+        #ifdef USE_DFPLAYER
           SinglePlay_Sound(4);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("004-Volume");
+        #endif
         delay(500);
         break;
       case CS_SOUNDFONT: 
@@ -123,16 +136,27 @@ void NextConfigState(){
           Serial.print(F("Sound font"));
         #endif        
         lightOff(ledPins, -1);
-        SinglePlay_Sound(5);
-        delay(600);
-        SinglePlay_Sound(soundFont.getMenu((storage.soundFont)*NR_FILE_SF));
-        delay(500);  
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(5);
+          delay(600);
+          SinglePlay_Sound(soundFont.getMenu((storage.soundFont)*NR_FILE_SF));
+          delay(500);  
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("005-SoundFont");
+          delay(600);
+          SinglePlay_Sound("00_boot");
+          delay(500);
+        #endif
         break;
       case CS_MAINCOLOR: 
         #if defined LS_FSM
           Serial.print(F("Main color"));
         #endif        
-        SinglePlay_Sound(6);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(6);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("006-MainColor");
+        #endif
         delay(500); 
         getColor(storage.sndProfile[storage.soundFont].mainColor);
         pixelblade_KillKey_Disable();
@@ -142,7 +166,11 @@ void NextConfigState(){
         #if defined LS_FSM
           Serial.print(F("Clash color"));
         #endif        
-        SinglePlay_Sound(7);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(7);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("007-ClashColor");
+        #endif
         delay(500); 
         getColor(storage.sndProfile[storage.soundFont].clashColor);
         pixelblade_KillKey_Disable();
@@ -152,7 +180,11 @@ void NextConfigState(){
         #if defined LS_FSM
           Serial.print(F("Blaster deflect color"));
         #endif        
-        SinglePlay_Sound(8);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(8);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("008-BlastColor");
+        #endif
         delay(500); 
         getColor(storage.sndProfile[storage.soundFont].blasterboltColor);
         pixelblade_KillKey_Disable();
@@ -162,7 +194,11 @@ void NextConfigState(){
         #if defined LS_FSM
           Serial.print(F("Flicker type"));
         #endif  
-        SinglePlay_Sound(25);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(25);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("025-flickerStyle");
+        #endif
         delay(700);
         LoopPlay_Sound(soundFont.getHum((storage.soundFont)*NR_FILE_SF));
         break;           
@@ -171,7 +207,11 @@ void NextConfigState(){
           Serial.print(F("Power on/off type"));
         #endif  
         ConfigModeSubStates=CS_POWERONOFFTYPE;
-        SinglePlay_Sound(24);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(24);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("024-ignitionStyle");
+        #endif
         delay(500); 
         break; 
       case CS_SWINGSENSITIVITY:
@@ -179,15 +219,22 @@ void NextConfigState(){
           Serial.print(F("Swing Sensitivity"));
         #endif  
         BladeMeter(ledPins, (storage.sndProfile[storage.soundFont].swingSensitivity)/100);
-        SinglePlay_Sound(26);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(26);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("026-swingSensitivity");
+        #endif
         delay(500); 
         break;  
       case CS_SLEEPINIT: 
         #if defined LS_FSM
           Serial.print(F("Initialize sleep mode"));
         #endif        
-        SinglePlay_Sound(29);
-        delay(500);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(29);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("029-sleepModeInit");
+        #endif        delay(500);
         break;   
 #ifdef BATTERY_CHECK        
       case CS_BATTERYLEVEL: 
@@ -201,7 +248,11 @@ void NextConfigState(){
         #if defined LS_FSM
           Serial.print(F("USB Media storage access"));
         #endif        
-        SinglePlay_Sound(28);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(28);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("028-storageMediaAccess");
+        #endif
         delay(500);
         Disable_FTDI(true); // disable FTDI to be able to manipulate storage media on board via USB
         break;   
@@ -209,8 +260,11 @@ void NextConfigState(){
         #if defined LS_FSM
           Serial.print(F("USB board programming access"));
         #endif        
-        SinglePlay_Sound(27);
-        delay(500);
+        #ifdef USE_DFPLAYER
+          SinglePlay_Sound(27);
+        #elif defined(USE_RAW_SPEAKER)
+          SinglePlay_Sound("027-programingMode");
+        #endif        delay(500);
         Disable_MP3(true);
         //delay(1000);
         Disable_FTDI(false); // enable FTDI again

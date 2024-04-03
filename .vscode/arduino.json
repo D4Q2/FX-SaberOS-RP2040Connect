@@ -1,0 +1,6 @@
+{
+    "configuration": "flash=16777216_0,freq=133,opt=Small,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,usbstack=picosdk,ipbtstack=ipv4only,uploadmethod=default",
+    "board": "rp2040:rp2040:arduino_nano_connect",
+    "port": "/dev/tty.usbmodem2101",
+    "sketch": "FX-SaberOS-RP2040Connect.ino"
+}

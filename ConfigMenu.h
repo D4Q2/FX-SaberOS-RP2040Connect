@@ -8,11 +8,11 @@
 #include <Arduino.h>
 #include "Config_HW.h"
 #include "Config_SW.h"
+#include <Adafruit_NeoPixel.h>
 
 #if not defined CONFIGMENU_H_
 #define CONFIGMENU_H_
 
-#include <WS2812.h>
 
 enum SaberStateEnum {S_STANDBY, S_SABERON, S_CONFIG, S_SLEEP, S_JUKEBOX};
 enum ActionModeSubStatesEnum {AS_HUM, AS_IGNITION, AS_RETRACTION, AS_BLADELOCKUP, AS_PREBLADELOCKUP, AS_TIPMELT, AS_BLASTERDEFLECTMOTION, AS_BLASTERDEFLECTPRESS, AS_CLASH, AS_SWING, AS_SPIN, AS_FORCE, AS_LASTMEMBER}; // never delete AS_LASTMEMBER!!! Needed to calculate number of elements in the enum type!!!

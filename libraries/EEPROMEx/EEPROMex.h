@@ -29,8 +29,8 @@
 #include <avr/eeprom.h>
 
 // Boards with ATmega328, Duemilanove, Uno, UnoSMD, Lilypad - 1024 bytes (1 kilobyte)
-// Boards with ATmega1280 or 2560, Arduino Mega series – 4096 bytes (4 kilobytes)
-// Boards with ATmega168, Lilypad, old Nano, Diecimila  – 512 bytes (1/2 kilobyte)
+// Boards with ATmega1280 or 2560, Arduino Mega series ï¿½ 4096 bytes (4 kilobytes)
+// Boards with ATmega168, Lilypad, old Nano, Diecimila  ï¿½ 512 bytes (1/2 kilobyte)
 
 #define EEPROMSizeATmega168   512     
 #define EEPROMSizeATmega328   1024     

@@ -5,15 +5,8 @@
  * Source :  https://github.com/Protonerd/FX-SaberOS
  */
 #include "Light.h"
-#include "Config_HW.h"
-#include "Config_SW.h"
 #include "ConfigMenu.h"
 #include "Soundfont.h"
-
-#if defined PIXELBLADE
-#include <WS2812.h>
-#endif
-
 
 // global Saber state and Sub State variables
 extern SaberStateEnum SaberState;
@@ -36,9 +29,9 @@ extern struct StoreStruct {
   uint8_t volume;// 0 to 31
   uint8_t soundFont;// as many as Sound font you have defined in Soundfont.h Max:253
   struct Profile {
-    cRGB mainColor;
-    cRGB clashColor;
-    cRGB blasterboltColor;
+    uint32_t mainColor;
+    uint32_t clashColor;
+    uint32_t blasterboltColor;
     uint16_t swingSensitivity;
     uint8_t flickerType;
     uint8_t poweronoffType;
@@ -58,7 +51,9 @@ extern uint8_t ledPins[];
 const uint8_t TIP_PIXELS=25; // the number of pixels to animate in tipmelt mode
 bool fireblade=false;
 
-#ifdef PIXELBLADE // FIREBLADE
+#ifdef PIXELBLADE 
+  Adafruit_NeoPixel pixels(NUMPIXELS, DATA_PIN, NEO_GRB + NEO_KHZ800);
+  // FIREBLADE
   #ifdef ANIBLADE
     // COOLING: How much does the air cool as it rises?
     // Less cooling = taller flames.  More cooling = shorter flames.
@@ -76,7 +71,7 @@ bool fireblade=false;
     //#endif
     #define PIXELSTEP 2 // how many pixel to treat as a group to save on processing capability
     static byte heat[NUMPIXELS/PIXELSTEP];
-  #endif ANIBLADE
+  #endif // ANIBLADE
 #endif  // PIXELBLADE
 
 
@@ -92,15 +87,13 @@ uint8_t pulseflicker_pwm=0;
 bool pulsedir=true;
 static uint8_t flickerPos = 0;
 static long lastFlicker = millis();
-#if defined PIXELBLADE
-  extern WS2812 pixels;
-#endif
+
 #ifdef PIXEL_ACCENT
-  extern WS2812 accentPixels;
+  Adafruit_NeoPixel accentPixels(NUMPIXELS, DATA_PIN, NEO_GRB + NEO_KHZ800);
 #endif
 
 #if defined STAR_LED or defined PIXELBLADE or defined ADF_PIXIE_BLADE
-extern cRGB currentColor;
+extern uint32_t currentColor;
 #endif
 
 #ifdef ADF_PIXIE_BLADE
@@ -110,7 +103,7 @@ extern cRGB currentColor;
 
 #ifdef COLOR_PROFILE
 // define an array for the 15 color profiles
-cRGB colorProfiles[15];
+uint32_t colorProfiles[15];
 //colorProfiles[0].r=255;
 #endif
 // ====================================================================================
@@ -118,7 +111,7 @@ cRGB colorProfiles[15];
 // ====================================================================================
 
 /* ***************** UNIFIED LIGHT FUNCTIONS *********************/
-void lightOn(uint8_t ledPins[], int8_t segment = -1, cRGB color={0,0,0}, int8_t StartPixel=-1, int8_t StopPixel=-1) {
+void lightOn(uint8_t ledPins[], int8_t segment, uint32_t color, int8_t StartPixel, int8_t StopPixel) {
   // Light On
   #if defined LEDSTRINGS
     if (segment == -1) {
@@ -147,18 +140,18 @@ void lightOn(uint8_t ledPins[], int8_t segment = -1, cRGB color={0,0,0}, int8_t 
     // Light On
     if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe
       for (uint8_t i = 0; i <= NUMPIXELS; i++) {
-        pixels.set_crgb_at(i, color);
+        pixels.setPixelColor(i, color);
       }
     } else {
       for (uint8_t i = StartPixel; i <= StopPixel; i++) {
-        pixels.set_crgb_at(i, color);
+        pixels.setPixelColor(i, color);
       }
     }
-    pixels.sync();
+    pixels.show();
   #endif
 } //lightOn
 
-void lightOff(uint8_t ledPins[], int8_t segment = -1, int8_t StartPixel=-1, int8_t StopPixel=-1) {
+void lightOff(uint8_t ledPins[], int8_t segment, int8_t StartPixel, int8_t StopPixel) {
   #if defined LEDSTRINGS
     // shut Off
     //Shut down PWM
@@ -186,26 +179,23 @@ void lightOff(uint8_t ledPins[], int8_t segment = -1, int8_t StartPixel=-1, int8
   
   #ifdef PIXELBLADE
     // shut Off
-    cRGB value;
-    value.b = 0;
-    value.g = 0;
-    value.r = 0; // RGB Value -> Off
+    uint32_t value = pixels.Color(0, 0, 0);
     if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe
       for (uint16_t i = 0; i <= NUMPIXELS; i++) {
-        pixels.set_crgb_at(i, value);
+        pixels.setPixelColor(i, value);
       }
     }
     else {
       for (uint8_t i = StartPixel; i <= StopPixel; i++) {
-        pixels.set_crgb_at(i, value);
+        pixels.setPixelColor(i, value);
       }
     }
-    pixels.sync();
+    pixels.show();
   #endif
 
 } //lightOff
 
-void getColor(cRGB color={0,0,0}) {
+void getColor(uint32_t color) {
   #if defined LEDSTRINGS
   
   #endif
@@ -223,137 +213,151 @@ void getColor(cRGB color={0,0,0}) {
   #endif
     
   #ifdef PIXELBLADE
-    currentColor.r = color.r;
-    currentColor.g = color.g;
-    currentColor.b = color.b;
+    currentColor = color;
   #endif  
 } // getColor
 
-void RampBlade(uint16_t RampDuration, bool DirectionUpDown, int8_t StartPixel=-1, int8_t StopPixel=-1) {
+void RampBlade(uint16_t RampDuration, bool DirectionUpDown, int8_t StartPixel, int8_t StopPixel) {
   #if defined LEDSTRINGS
-  
+    // Nothing
   #endif
-  
   #if defined STAR_LED
-
+    // Nothing
   #endif
-
   #ifdef ADF_PIXIE_BLADE
-
+    // Nothing
   #endif
   
   #ifdef PIXELBLADE
-    unsigned long ignitionStart = millis();  //record start of ramp function
-    cRGB value;
-    if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe    // neopixel ramp code from jbkuma
+    // The start of the ramp function
+    unsigned long ignitionStart = millis();
+    // Create a new variable value to store the color we're choosing (starts as black)
+    uint32_t value = pixels.Color(0,0,0);
+
+
+    // If either start nor stop is undefined or invalid range, go through the whole stripe    
+    if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // neopixel ramp code from jbkuma
       StartPixel=0;
       StopPixel= NUMPIXELS; 
     }
+
     if (fireblade) { // #ifdef FIREBLADE
       #ifdef ANIBLADE
-      for (unsigned int i=StartPixel; i<StopPixel; (i=i+5)) { // turn on/off one LED at a time
-         FireBlade(storage.sndProfile[storage.soundFont].flickerType-2);
-         for(unsigned int j=0; j<StopPixel; j++ ) { // fill up string with data
-          if ((DirectionUpDown and j<=i) or (!DirectionUpDown and j<=StopPixel-1-i)){
+        for (unsigned int i=StartPixel; i<StopPixel; (i=i+5)) { // turn on/off one LED at a time
+          FireBlade(storage.sndProfile[storage.soundFont].flickerType-2);
+          for(unsigned int j=0; j<StopPixel; j++ ) { // fill up string with data
+            if ((DirectionUpDown and j<=i) or (!DirectionUpDown and j<=StopPixel-1-i)){
+              }
+              else if ((DirectionUpDown and j>i) or (!DirectionUpDown and j>StopPixel-1-i)){
+                //heat[j]=0;
+                pixels.setPixelColor(j, value); // Set value at LED found at index j
+              }      
             }
-            else if ((DirectionUpDown and j>i) or (!DirectionUpDown and j>StopPixel-1-i)){
-              value.r=0;
-              value.g=0;
-              value.b=0;  
-              //heat[j]=0;
-              pixels.set_crgb_at(j, value); // Set value at LED found at index j
-            }      
-          }
-          pixels.sync(); // Sends the data to the LEDs
-        }    
-        #endif ANIBLADE
+            pixels.show(); // Sends the data to the LEDs
+          }    
+        #endif // ANIBLADE
     } // fireblade
-    else { //#else
-      for (unsigned int i = StartPixel; i < StopPixel; i = StopPixel*(millis()-ignitionStart)/RampDuration) { // turn on/off the number of LEDs that match rap timing
-          //generate a flicker effect between 65% and 115% of MAX_BRIGHTNESS, with a 1 in 115 chance of flicking to 0
-          int flickFactor = random(0,115);
-          if (flickFactor < 65 && flickFactor > 0) { flickFactor = 100; } 
-         for(uint8_t  j=StartPixel; j<=StopPixel; j++ ) { // fill up string with data
+    else {
+      // Loop from startpixel to stoppixel, turning on/off the number of LEDs that match ramp timing
+      for (unsigned int i = StartPixel; i < StopPixel; i = StopPixel*(millis()-ignitionStart)/RampDuration) {
+        // Generate a flicker effect between 65% and 115% of MAX_BRIGHTNESS, with a 1 in 115 chance of flicking to 0
+        int flickFactor = random(0,115);
+        if (flickFactor < 65 && flickFactor > 0) { flickFactor = 100; } 
+
+        // Fill up string with correct data
+        for(uint8_t  j=StartPixel; j<=StopPixel; j++ ) {
+          value = pixels.Color(0,0,0);
+
           if ((DirectionUpDown and j<=i)){
-            value.r = MAX_BRIGHTNESS * i / NUMPIXELS * currentColor.r / rgbFactor * flickFactor / 100;
-            value.g = MAX_BRIGHTNESS * i / NUMPIXELS * currentColor.g / rgbFactor * flickFactor / 100;
-            value.b = MAX_BRIGHTNESS * i / NUMPIXELS * currentColor.b / rgbFactor * flickFactor / 100;
-            } else if (!DirectionUpDown and j<=NUMPIXELS-1-i){
-            value.r = MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * currentColor.r / rgbFactor * flickFactor / 100;
-            value.g = MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * currentColor.g / rgbFactor * flickFactor / 100;
-            value.b = MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * currentColor.b / rgbFactor * flickFactor / 100;
-            } else if ((DirectionUpDown and j>i) or (!DirectionUpDown and j>NUMPIXELS-1-i)){
-            value.r=0;
-            value.g=0;
-            value.b=0;      
-          }      
-          pixels.set_crgb_at(j, value);
+            uint8_t r, g, b;
+            UnpackColor(currentColor, r, g, b);
+            value = pixels.Color(
+              MAX_BRIGHTNESS * i / NUMPIXELS * r / rgbFactor * flickFactor / 100,
+              MAX_BRIGHTNESS * i / NUMPIXELS * g / rgbFactor * flickFactor / 100,
+              MAX_BRIGHTNESS * i / NUMPIXELS * b / rgbFactor * flickFactor / 100
+            );
+          }
+          else if (!DirectionUpDown and j<=NUMPIXELS-1-i){
+            uint8_t r, g, b;
+            UnpackColor(currentColor, r, g, b);
+            value = pixels.Color(
+              MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * r / rgbFactor * flickFactor / 100,
+              MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * g / rgbFactor * flickFactor / 100,
+              MAX_BRIGHTNESS * (NUMPIXELS - i) / NUMPIXELS * b / rgbFactor * flickFactor / 100
+            );
+          }
+          else if ((DirectionUpDown and j>i) or (!DirectionUpDown and j>NUMPIXELS-1-i)){
+            // Do nothing, leave black
+          }
+          pixels.setPixelColor(j, value);
         }
-         pixels.sync(); // Sends the data to the LEDs
-         delay(RampDuration/(StopPixel-StartPixel)); //match the ramp duration to the number of pixels in the string
+        // Send the data to the LEDs
+        pixels.show();
+        // Match the ramp duration to the number of pixels in the string
+        delay(RampDuration/(StopPixel-StartPixel));
       }
     } // #endif
   #endif  
 } // RampBlade
 
-void lightIgnition(uint8_t ledPins[], uint16_t time, uint8_t type, cRGB color={0,0,0}, int8_t StartPixel=-1, int8_t StopPixel=-1) {
+void lightIgnition(uint8_t ledPins[], uint16_t time, uint8_t type, uint32_t color, int8_t StartPixel, int8_t StopPixel) {
   #if defined LEDSTRINGS
   
-  uint8_t LS_Status[6];
-  bool ongoing=true;
+    uint8_t LS_Status[6];
+    bool ongoing=true;
 
-  switch (type) {
-    default:
-    case 0:
-     for (uint8_t i=0; i<6; i++) {
-      LS_Status[i]=0;
-     }
-     while (ongoing) {  // do the loops as long the variable is set to false, when the last segment finsihed the ramp
+    switch (type) {
+      default:
+      case 0:
+      for (uint8_t i=0; i<6; i++) {
+        LS_Status[i]=0;
+      }
+      while (ongoing) {  // do the loops as long the variable is set to false, when the last segment finsihed the ramp
+        for (uint8_t i = 0; i < 6; i++) {
+          analogWrite(ledPins[i], LS_Status[i]);
+          if (i==0 and LS_Status[i]<255) {
+            LS_Status[i]++;
+          }
+          else if (i>0 and LS_Status[i-1]>=I_BEGINNEXTSEGMENT and LS_Status[i]<255) {
+            LS_Status[i]++;
+          }
+          if (LS_Status[5]==255) {
+            ongoing=false;
+          }
+        }
+        delayMicroseconds(time * (1000/(5*I_BEGINNEXTSEGMENT+255)));
+      }
+      // ramp down to MAX_BRIGHTNESS
+      for (uint8_t j = 255; j >= MAX_BRIGHTNESS; j--) {
+        for (uint8_t i = 0; i < 6; i++) {
+          analogWrite(ledPins[i], j);
+        }
+        delay(3);
+      }
+      /*
+      // Light up the ledstrings Movie-like
       for (uint8_t i = 0; i < 6; i++) {
-        analogWrite(ledPins[i], LS_Status[i]);
-        if (i==0 and LS_Status[i]<255) {
-          LS_Status[i]++;
+        for (uint8_t j=0; j<=MAX_BRIGHTNESS;j+=10) {
+          analogWrite(ledPins[i], j);
+          delay(time / (6*25));
         }
-        else if (i>0 and LS_Status[i-1]>=I_BEGINNEXTSEGMENT and LS_Status[i]<255) {
-          LS_Status[i]++;
-        }
-        if (LS_Status[5]==255) {
-          ongoing=false;
+        //delay(time / (5*10));
+      }
+      */
+      break;
+      case 1:
+      for (int8_t i = 5; i >= 0; i--) {
+        for (uint8_t j = 0; j <= i; j++) {
+          if (j > 0) {
+            digitalWrite(ledPins[j - 1], LOW);
+          }
+          digitalWrite(ledPins[j], HIGH);
+          delay(time / 20);
         }
       }
-      delayMicroseconds(time * (1000/(5*I_BEGINNEXTSEGMENT+255)));
-     }
-     // ramp down to MAX_BRIGHTNESS
-     for (uint8_t j = 255; j >= MAX_BRIGHTNESS; j--) {
-      for (uint8_t i = 0; i < 6; i++) {
-        analogWrite(ledPins[i], j);
-      }
-      delay(3);
-     }
-   /*
-// Light up the ledstrings Movie-like
-    for (uint8_t i = 0; i < 6; i++) {
-      for (uint8_t j=0; j<=MAX_BRIGHTNESS;j+=10) {
-        analogWrite(ledPins[i], j);
-        delay(time / (6*25));
-      }
-      //delay(time / (5*10));
+      break;
     }
-    */
-    break;
-    case 1:
-    for (int8_t i = 5; i >= 0; i--) {
-      for (uint8_t j = 0; j <= i; j++) {
-        if (j > 0) {
-          digitalWrite(ledPins[j - 1], LOW);
-        }
-        digitalWrite(ledPins[j], HIGH);
-        delay(time / 20);
-      }
-    }
-    break;
-  }
-  #endif
+  #endif // LEDSTRINGS
   
   #if defined STAR_LED
     // Fade in to Maximum brightness
@@ -363,11 +367,10 @@ void lightIgnition(uint8_t ledPins[], uint16_t time, uint8_t type, cRGB color={0
       analogWrite(LED_BLUE, color.b * fadeIn / 255); // BLUE
       delay(time / 255);
     }
-  #endif
+  #endif // STAR
 
   #ifdef ADF_PIXIE_BLADE
- 
-  // Fade in to Maximum brightness
+    // Fade in to Maximum brightness
     for (uint8_t fadeIn = 0; fadeIn < 255; fadeIn++) {
       for(uint8_t i=0; i< NUMPIXELS; i++) {        
         strip.setPixelColor(i, color.r * fadeIn / 255, color.g * fadeIn / 255, color.b * fadeIn / 255);
@@ -375,26 +378,33 @@ void lightIgnition(uint8_t ledPins[], uint16_t time, uint8_t type, cRGB color={0
     strip.show();
     delay(time / 255);
     }
-  #endif
+  #endif // ADF_PIXIE
   
   #ifdef PIXELBLADE
-    cRGB value;
-    if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe    // neopixel ramp code from jbkuma
+    // Declaring a new variable to hold a color
+    uint32_t value = 0;
+    // If the start or stop pixels are invalid, go through the whole strip
+    if (StartPixel == -1 or StopPixel == -1 or StopPixel < StartPixel or StartPixel > NUMPIXELS or StopPixel > NUMPIXELS) { // neopixel ramp code from jbkuma
       StartPixel=0;
       StopPixel= NUMPIXELS; 
     }
-    value.r = MAX_BRIGHTNESS * color.r / rgbFactor;
-    value.g = MAX_BRIGHTNESS * color.g / rgbFactor;
-    value.b = MAX_BRIGHTNESS * color.b / rgbFactor;
-    //switch (type) {
-    //  case 0:
-    //  // Light up the ledstrings Movie-like
-      RampBlade(time, true, StartPixel, StopPixel);
-    //}
-  #endif  
+
+    // Unpack the currentColor of the saber and modify it based on the MAX_BRIGHTNESS and rgbFactor
+    uint8_t r, g, b;
+    UnpackColor(currentColor, r, g, b);
+    value = pixels.Color(
+      MAX_BRIGHTNESS * r / rgbFactor,
+      MAX_BRIGHTNESS * g / rgbFactor,
+      MAX_BRIGHTNESS * b / rgbFactor
+    );
+    // After this, value is now the current color modified by MAX_BRIGHTNESS and rgbFactor
+
+    // Now go and light up the LEDs 1x1, movie-like
+    RampBlade(time, true, StartPixel, StopPixel);
+  #endif
 } // lightIgnition
 
-void lightRetract(uint8_t ledPins[], uint16_t time, uint8_t type,cRGB color={0,0,0}, int8_t StartPixel=-1, int8_t StopPixel=-1) {
+void lightRetract(uint8_t ledPins[], uint16_t time, uint8_t type,uint32_t color, int8_t StartPixel, int8_t StopPixel) {
   #if defined LEDSTRINGS
 
     uint8_t LS_Status[6];
@@ -424,18 +434,18 @@ void lightRetract(uint8_t ledPins[], uint16_t time, uint8_t type,cRGB color={0,0
        }
       break;
       case 1:
-  // Light off the ledstrings invert
-      for (int8_t i = 5; i >= 0; i--) {
-        for (uint8_t j = 0; j <= i; j++) {
-          if (j > 0) {
-            digitalWrite(ledPins[j - 1], HIGH);
+    // Light off the ledstrings invert
+        for (int8_t i = 5; i >= 0; i--) {
+          for (uint8_t j = 0; j <= i; j++) {
+            if (j > 0) {
+              digitalWrite(ledPins[j - 1], HIGH);
+            }
+            digitalWrite(ledPins[j], LOW);
+            delay(time / 20);
           }
-          digitalWrite(ledPins[j], LOW);
-          delay(time / 20);
         }
+        break;
       }
-      break;
-    }
   #endif
   
   #if defined STAR_LED
@@ -449,8 +459,7 @@ void lightRetract(uint8_t ledPins[], uint16_t time, uint8_t type,cRGB color={0,0
   #endif
 
   #ifdef ADF_PIXIE_BLADE
- 
-  // Fade in to Maximum brightness
+    // Fade in to Maximum brightness
     for (uint8_t fadeIn = 255; fadeIn > 0; fadeIn--) {
       for(uint8_t i=0; i< NUMPIXELS; i++) {        
         strip.setPixelColor(i, color.r * fadeIn / 255, color.g * fadeIn / 255, color.b * fadeIn / 255);
@@ -461,31 +470,24 @@ void lightRetract(uint8_t ledPins[], uint16_t time, uint8_t type,cRGB color={0,0
   #endif
   
   #ifdef PIXELBLADE
-    //switch (type) {
-    //  default:
-    //  case 0:
-      // Light off the ledstrings Movie Like
-      cRGB value;
-      value.b = 0;
-      value.g = 0;
-      value.r = 0; // RGB Value -> Off
-      if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe    // neopixel ramp code from jbkuma
-        StartPixel=0;
-        StopPixel= NUMPIXELS; 
-      }
-      RampBlade(time, false, StartPixel, StopPixel);
-      //break;
-  if (fireblade) { // #ifdef FIREBLADE
-    #ifdef ANIBLADE
-      for(unsigned int j=0; j<sizeof(heat); j++ ) { // clear the heat static variables
-        heat[j]=0;
-      }  
-    #endif // ANIBLADE
-  }
+    // Light off the ledstrings Movie Like
+    uint32_t value = 0;
+    if (StartPixel == -1 or StopPixel==-1 or StopPixel<StartPixel or StartPixel>NUMPIXELS or StopPixel>NUMPIXELS) {  // if neither start nor stop is defined or invalid range, go through the whole stripe    // neopixel ramp code from jbkuma
+      StartPixel=0;
+      StopPixel= NUMPIXELS; 
+    }
+    RampBlade(time, false, StartPixel, StopPixel);
+    if (fireblade) { // #ifdef FIREBLADE
+      #ifdef ANIBLADE
+        for(unsigned int j=0; j<sizeof(heat); j++ ) { // clear the heat static variables
+          heat[j]=0;
+        }  
+      #endif // ANIBLADE
+    }
   #endif  
 } // lightRetract
 
-void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincolor={0,0,0}, cRGB clashcolor={0,0,0},uint8_t AState=0, int8_t StartPixel=-1 , int8_t StopPixel=-1) {
+void lightFlicker(uint8_t ledPins[], uint8_t type, uint8_t value, uint32_t maincolor, uint32_t clashcolor,uint8_t AState, int8_t StartPixel, int8_t StopPixel) {
     uint8_t brightness;
 
   #if defined LEDSTRINGS
@@ -646,7 +648,7 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
       if (flickFactor > 3 && flickFactor < 170) { flickFactor = 255; }
       //brightness = 255 * flickFactor / 100;
       brightness = flickFactor;
-      cRGB color;
+      uint32_t color;
 
       switch (type) {
         default:
@@ -658,35 +660,49 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
           // gives 25% chance to flick larger range for better randomization
           int lockupFlick = random(0,39); 
           if (lockupFlick < 20) {
-            color.r = brightness * maincolor.r / rgbFactor;
-            color.g = brightness * maincolor.g / rgbFactor;
-            color.b = brightness * maincolor.b / rgbFactor;
+            uint8_t r,g,b;
+            UnpackColor(maincolor, r, g, b);
+            color = pixels.Color(
+              brightness * r / rgbFactor,
+              brightness * g / rgbFactor,
+              brightness * b / rgbFactor
+            );
           } else if (lockupFlick < 30) {
-            color.r = brightness * clashcolor.r / rgbFactor;
-            color.g = brightness * clashcolor.g / rgbFactor;
-            color.b = brightness * clashcolor.b / rgbFactor;
+            uint8_t r,g,b;
+            UnpackColor(clashcolor, r, g, b);
+            color = pixels.Color(
+              brightness * r / rgbFactor,
+              brightness * g / rgbFactor,
+              brightness * b / rgbFactor
+            );
           }
           else  { // simple white
-            color.r = MAX_BRIGHTNESS;
-            color.g = MAX_BRIGHTNESS;
-            color.b = MAX_BRIGHTNESS;
+            color = pixels.Color(255,255,255);
           }
         }
         else if (AState==AS_CLASH) {
-          color.r = brightness * clashcolor.r / rgbFactor;
-          color.g = brightness * clashcolor.g / rgbFactor;
-          color.b = brightness * clashcolor.b / rgbFactor;          
+          uint8_t r,g,b;
+          UnpackColor(clashcolor, r, g, b);
+          color = pixels.Color(
+            brightness * r / rgbFactor,
+            brightness * g / rgbFactor,
+            brightness * b / rgbFactor
+          );       
         }
         else {  //normal operation
-          color.r = brightness * maincolor.r / rgbFactor;
-          color.g = brightness * maincolor.g / rgbFactor;
-          color.b = brightness * maincolor.b / rgbFactor;
+            uint8_t r,g,b;
+            UnpackColor(maincolor, r, g, b);
+            color = pixels.Color(
+              brightness * r / rgbFactor,
+              brightness * g / rgbFactor,
+              brightness * b / rgbFactor
+            );
         }
       
         for (uint16_t i = StartPixel; i <= StopPixel; i++) {
-            pixels.set_crgb_at(i, color); 
+            pixels.setPixelColor(i, color); 
         }
-        pixels.sync();
+        pixels.show();
         break;
       case 1:
         // Pulse flickering
@@ -694,14 +710,22 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
         if (((millis()-lastFlicker>=PULSEDURATION/PULSEFLICKERDEPTH) and AState != AS_BLADELOCKUP) or (AState == AS_BLADELOCKUP)) {
           lastFlicker=millis();
           if (AState==AS_CLASH) {
-            color.r = (MAX_BRIGHTNESS - pulseflicker_pwm) * clashcolor.r / rgbFactor;
-            color.g = (MAX_BRIGHTNESS - pulseflicker_pwm) * clashcolor.g / rgbFactor;
-            color.b = (MAX_BRIGHTNESS - pulseflicker_pwm) * clashcolor.b / rgbFactor;          
+            uint8_t r,g,b;
+            UnpackColor(clashcolor, r, g, b);
+            color = pixels.Color(
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * r / rgbFactor,
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * g / rgbFactor,
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * b / rgbFactor
+            );        
           }
           else {
-            color.r = (MAX_BRIGHTNESS - pulseflicker_pwm) * maincolor.r / rgbFactor;
-            color.g = (MAX_BRIGHTNESS - pulseflicker_pwm) * maincolor.g / rgbFactor;
-            color.b = (MAX_BRIGHTNESS - pulseflicker_pwm) * maincolor.b / rgbFactor;
+            uint8_t r,g,b;
+            UnpackColor(maincolor, r, g, b);
+            color = pixels.Color(
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * r / rgbFactor,
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * g / rgbFactor,
+              (MAX_BRIGHTNESS - pulseflicker_pwm) * b / rgbFactor
+            );   
           }
           if (pulsedir) {
             pulseflicker_pwm++;
@@ -716,10 +740,10 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
             pulsedir=true;
           }
            for (uint16_t i = StartPixel; i <= StopPixel; i++) {
-              pixels.set_crgb_at(i, color); 
+              pixels.setPixelColor(i, color); 
           }
   
-          pixels.sync();
+          pixels.show();
         }
 
           break;
@@ -735,7 +759,7 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
             Fire_Sparking=100;  
           }
             FireBlade(0);
-            pixels.sync(); // Sends the data to the LEDs
+            pixels.show(); // Sends the data to the LEDs
             #endif // ANIBLADE
         }
         break;
@@ -751,7 +775,7 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
             Fire_Sparking=150;  
           }
             FireBlade(1);
-            pixels.sync(); // Sends the data to the LEDs
+            pixels.show(); // Sends the data to the LEDs
             #endif // ANIBLADE
         }
         break;
@@ -768,7 +792,7 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
             Fire_Sparking=100;  
           }
             FireBlade(2);
-            pixels.sync(); // Sends the data to the LEDs
+            pixels.show(); // Sends the data to the LEDs
             #endif // ANIBLADE
 
         }
@@ -779,13 +803,17 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
         //- (abs(analogRead(SPK1) - analogRead(SPK2)))*31/storage.volume/8,0,255); 
         brightness = constrain(MAX_BRIGHTNESS
         - random(FLICKERDEPTH),0,255);        // AudioTracker Flickering
-          color.r = brightness * maincolor.r / rgbFactor;
-          color.g = brightness * maincolor.g / rgbFactor;
-          color.b = brightness * maincolor.b / rgbFactor;      
+        uint8_t r,g,b;
+        UnpackColor(maincolor, r, g, b);
+        color = pixels.Color(
+          brightness * r / rgbFactor,
+          brightness * g / rgbFactor,
+          brightness * b / rgbFactor
+        );   
         for (uint16_t i = StartPixel; i <= StopPixel; i++) {
-            pixels.set_crgb_at(i, color); 
+            pixels.setPixelColor(i, color); 
         }
-        pixels.sync();
+        pixels.show();
         lightBlasterEffect(ledPins, random(5, NUMPIXELS - 3), map(NUMPIXELS, 10, NUMPIXELS-10, 1, 2), 0, storage.sndProfile[storage.soundFont].blasterboltColor);
         break;
 
@@ -819,7 +847,7 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
       int flickRange = 3 + constrain((millis()-tipmeltStart)/1000,0,100); // gradually increase fire effect over time
       int flick = random(0,flickRange); 
       for (uint16_t i = 0; i <= TIP_PIXELS; i++) { // flash clash color           
-        cRGB tipcolor;
+        uint32_t tipcolor;
         if (flick < 2) { // clash color
           color.r = brightness * clashcolor.r / rgbFactor;
           color.g = brightness * clashcolor.g / rgbFactor;
@@ -839,82 +867,90 @@ void lightFlicker(uint8_t ledPins[],uint8_t type, uint8_t value = 0,cRGB maincol
         } else  { // gradually heaten up the tip and show flame effect
             tipcolor = HeatColor(heat[i], 0);    
         }
-        pixels.set_crgb_at(NUMPIXELS-i, tipcolor); 
+        pixels.setPixelColor(NUMPIXELS-i, tipcolor); 
       }
-      pixels.sync();
+      pixels.show();
     }    
   #endif // TIP_MELT
 
   #endif
 } // lightFlicker
 
-cRGB CombineColors(cRGB color1, cRGB color2, int8_t percentage1) {
-  cRGB color;
-  color.r = (percentage1*color1.r + (100-percentage1)*color2.r)/100;
-  color.g = (percentage1*color1.g + (100-percentage1)*color2.g)/100;
-  color.b = (percentage1*color1.b + (100-percentage1)*color2.b)/100;
+uint32_t CombineColors(uint32_t color1, uint32_t color2, int8_t percentage1) {
+  uint32_t color;
+
+  uint8_t r1, g1, b1;
+  UnpackColor(color1, r1, g1, b1);
+  uint8_t r2, g2, b2;
+  UnpackColor(color2, r2, g2, b2);
+
+  color = pixels.Color(
+    (percentage1*r1 + (100-percentage1)*r2)/100,
+    (percentage1*g1 + (100-percentage1)*g2)/100,
+    (percentage1*b1 + (100-percentage1)*b2)/100
+  );
   return color;
 }
 
-void ColorMixing(cRGB colorID={0,0,0}, int8_t mod=-1, uint8_t maxBrightness=MAX_BRIGHTNESS, bool Saturate=false) {
+void ColorMixing(uint32_t colorID, int8_t mod, uint8_t maxBrightness, bool Saturate) {
   #if defined LEDSTRINGS
   
   #endif
   
 
   #if defined PIXELBLADE or defined STAR_LED or defined ADF_PIXIE_BLADE
-    cRGB mixedColor;
-    mixedColor.r=colorID.r;
-    mixedColor.g=colorID.g;
-    mixedColor.b=colorID.b;
+    uint32_t mixedColor = colorID;
+    uint8_t r, g, b;
+    UnpackColor(mixedColor, r, g, b);
+
       switch(mod) {
         default:
         case(0):
           if (Saturate) {
-            mixedColor.r=maxBrightness;
+            mixedColor = pixels.Color(maxBrightness, g, b);
           }
           else {
-            mixedColor.r=constrain(colorID.r+1,0,255);
+            mixedColor = pixels.Color(constrain(r+1,0,255), g, b);
           }
           break;
         case(1):
           if (Saturate) {
-            mixedColor.r=0;
+            mixedColor = pixels.Color(0, g, b);
           }
           else {
-            mixedColor.r=constrain(colorID.r-1,0,255);
+            mixedColor = pixels.Color(constrain(r-1,0,255), g, b);
           }
           break;
         case(2):
           if (Saturate) {
-            mixedColor.g=maxBrightness;
+            mixedColor = pixels.Color(r, maxBrightness, b);
           }
           else {
-            mixedColor.g=constrain(colorID.g+1,0,255);
+            mixedColor = pixels.Color(r, constrain(g+1,0,255), b);
           }
           break;
         case(3):
           if (Saturate) {
-            mixedColor.g=0;
+            mixedColor = pixels.Color(r, 0, b);
           }
           else {
-            mixedColor.g=constrain(colorID.g-1,0,255);
+            mixedColor = pixels.Color(r, constrain(g-1,0,255), b);
           }
           break;
         case(4):
           if (Saturate) {
-            mixedColor.b=maxBrightness;
+            mixedColor = pixels.Color(r, g, maxBrightness);
           }
           else {
-            mixedColor.b=constrain(colorID.b+1,0,255);
+            mixedColor = pixels.Color(r, g, constrain(b+1,0,255));
           }
           break;
         case(5):
           if (Saturate) {
-            mixedColor.b=0;
+            mixedColor = pixels.Color(r, g, 0);
           }
           else {
-            mixedColor.b=constrain(colorID.b-1,0,255);
+            mixedColor = pixels.Color(r, g, constrain(b-1,0,255));
           }
           break; 
       }
@@ -944,7 +980,7 @@ void ColorMixing(cRGB colorID={0,0,0}, int8_t mod=-1, uint8_t maxBrightness=MAX_
   #endif
 } // ColorMixing
 
-void lightBlasterEffect(uint8_t ledPins[], uint8_t pixel, uint8_t range, uint16_t B_time=BLASTER_FX_DURATION, cRGB SndFnt_MainColor={0,0,0}) {
+void lightBlasterEffect(uint8_t ledPins[], uint8_t pixel, uint8_t range, uint16_t B_time, uint32_t SndFnt_MainColor) {
   #if defined LEDSTRINGS
     analogWrite(ledPins[random(1,5)], LOW); 
     delay(BLASTER_FX_DURATION); 
@@ -964,11 +1000,9 @@ void lightBlasterEffect(uint8_t ledPins[], uint8_t pixel, uint8_t range, uint16_
   #endif
             
   #ifdef PIXELBLADE
-    cRGB blastcolor;
-    cRGB fadecolor;
-    blastcolor.r=currentColor.r;
-    blastcolor.g=currentColor.g;
-    blastcolor.g=currentColor.b;
+    uint32_t blastcolor;
+    uint32_t fadecolor;
+    blastcolor = currentColor;
     getColor(SndFnt_MainColor);  // get the main blade color for the fading effect
     for (uint8_t i = 0; i<=2*range-1;i++) {
       if (fireblade) {
@@ -980,32 +1014,28 @@ void lightBlasterEffect(uint8_t ledPins[], uint8_t pixel, uint8_t range, uint16_
       else {
         uint8_t j=i+pixel;
         if (j==pixel or j==pixel+2*range) { // 2 pixels at the edges shall be shut down
-          fadecolor.r = 0;
-          fadecolor.g = 0;
-          fadecolor.b = 0;
-          pixels.set_crgb_at(j, fadecolor);
+          fadecolor = 0;
+          pixels.setPixelColor(j, fadecolor);
         }
         else if (j==pixel+range+1) { // middle pixel full white
-          fadecolor.r = MAX_BRIGHTNESS;
-          fadecolor.g = MAX_BRIGHTNESS;
-          fadecolor.b = MAX_BRIGHTNESS;
-          pixels.set_crgb_at(j, fadecolor);
+          fadecolor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS, MAX_BRIGHTNESS);
+          pixels.setPixelColor(j, fadecolor);
         }
         else { // rest of the pixels between middle and edge
-          pixels.set_crgb_at(j, blastcolor);
+          pixels.setPixelColor(j, blastcolor);
         }
         /* 
         for (uint8_t j = 0; j <=range; j++) {
           if (j==i) {
-            pixels.set_crgb_at(pixel-j, blastcolor);
-            pixels.set_crgb_at(pixel+j, blastcolor);
+            pixels.setPixelColor(pixel-j, blastcolor);
+            pixels.setPixelColor(pixel+j, blastcolor);
           }
           else {
-            pixels.set_crgb_at(pixel-j, currentColor);
-            pixels.set_crgb_at(pixel+j, currentColor);
+            pixels.setPixelColor(pixel-j, currentColor);
+            pixels.setPixelColor(pixel+j, currentColor);
           }
         }*/
-        pixels.sync();
+        pixels.show();
         if (not fireblade) {
           delay(B_time/(2*range));  // blast deflect should last for ~500ms
         }
@@ -1018,7 +1048,7 @@ void pixelblade_KillKey_Enable() {
   #if defined PIXELBLADE or defined ADF_PIXIE_BLADE
     #ifdef PIXELBLADE
       digitalWrite(DATA_PIN,HIGH); // in order not to back-connect GND over the Data pin to the stripes when the Low-Sides disconnect it
-    #else if ADF_PIXIE_BLADE
+    #elif defined ADF_PIXIE_BLADE
       digitalWrite(PIXIEPIN,HIGH); // in order not to back-connect GND over the Data pin to the stripes when the Low-Sides disconnect it
     #endif
     // cut power to the neopixels stripes by disconnecting their GND signal using the LS pins
@@ -1047,7 +1077,7 @@ void pixelblade_KillKey_Disable() {
   #endif
 }
 
-void lightClashEffect(uint8_t ledPins[], cRGB color) {
+void lightClashEffect(uint8_t ledPins[], uint32_t color) {
 
   #if defined LEDSTRINGS
     for (uint8_t i = 0; i <= 5; i++) {
@@ -1090,10 +1120,17 @@ void lightClashEffect(uint8_t ledPins[], cRGB color) {
 void lightSwingEffect(uint8_t ledPins[]) {
   #ifndef LEDSTRINGS
     if (not fireblade) { 
-      cRGB swingColor; // inject a dash of clash color into main color when swinging
-      swingColor.r=(9 * storage.sndProfile[storage.soundFont].mainColor.r + storage.sndProfile[storage.soundFont].clashColor.r) / 10;
-      swingColor.g=(9 * storage.sndProfile[storage.soundFont].mainColor.g + storage.sndProfile[storage.soundFont].clashColor.g) / 10;
-      swingColor.b=(9 * storage.sndProfile[storage.soundFont].mainColor.b + storage.sndProfile[storage.soundFont].clashColor.b) / 10;
+      uint32_t swingColor; // inject a dash of clash color into main color when swinging
+      uint8_t mainR, mainG, mainB;
+      UnpackColor(storage.sndProfile[storage.soundFont].mainColor, mainR, mainG, mainB);
+      uint8_t clashR, clashG, clashB;
+      UnpackColor(storage.sndProfile[storage.soundFont].mainColor, clashR, clashG, clashB);
+      
+      swingColor = pixels.Color(
+        (9 * mainR + clashR) / 10,
+        (9 * mainG + clashG) / 10,
+        (9 * mainB + clashB) / 10        
+      );
       lightOn(ledPins, -1, swingColor);
     }
   #endif // not LEDSTRINGS
@@ -1102,114 +1139,78 @@ void lightSwingEffect(uint8_t ledPins[]) {
 #if defined COLOR_PROFILE and not defined LEDSTRINGS
 void getColorFix(uint8_t colorID) {
   switch (colorID) {
-  case 0:
-//Red
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = 0;
-    currentColor.b = 0;
-    break;
-  case 1:
-//Orange
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = MAX_BRIGHTNESS/4;
-    currentColor.b = 0;
-    break;
-  case 2:
-//Amber
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = MAX_BRIGHTNESS*66/100;
-    currentColor.b = 0;
-    break;
-  case 3:
-//Yellow
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = 0;
-    break;
-  case 4:
-//Lime
-    currentColor.r = MAX_BRIGHTNESS*34/100;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = 0;
-    break;
-  case 5:
-//Green
-    currentColor.r = 0;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = 0;
-    break;
-  case 6:
-//Cyan
-    currentColor.r = 0;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = MAX_BRIGHTNESS*34/100;
-    break;
-  case 7:
-//Blue
-    currentColor.r = 0;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 8:
-//Light Blue
-    currentColor.r = 0;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = MAX_BRIGHTNESS*63/100;
-    break;
-  case 9:
-//Ice Blue
-    currentColor.r = 0;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 10:
-//Mauve
-    currentColor.r = MAX_BRIGHTNESS*12/100;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 11:
-//Purple
-    currentColor.r = MAX_BRIGHTNESS*35/100;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 12:
-//Pink
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 13:
-//Crimson
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS*5/100;
-    break;
-  case 14:
-//White
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  case 15:
-// LED1 and LED2 full on
-    currentColor.r = MAX_BRIGHTNESS;
-    currentColor.g = MAX_BRIGHTNESS;
-    currentColor.b = 0;
-    break;
-  case 16:
-// only LED3 is on
-    currentColor.r = 0;
-    currentColor.g = 0;
-    currentColor.b = MAX_BRIGHTNESS;
-    break;
-  default:
-// White (if enough voltage)
-    currentColor.r = 100;
-    currentColor.g = 100;
-    currentColor.b = 100;
-    break;
+    case 0:
+      //Red
+      currentColor = pixels.Color(MAX_BRIGHTNESS, 0, 0);
+      break;
+    case 1:
+      //Orange
+      currentColor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS/4, 0);
+      break;
+    case 2:
+      //Amber
+      currentColor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS*66/100, 0);
+      break;
+    case 3:
+      //Yellow
+      currentColor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS, 0);
+      break;
+    case 4:
+      //Lime
+      currentColor = pixels.Color(MAX_BRIGHTNESS*34/100, MAX_BRIGHTNESS, 0);
+      break;
+    case 5:
+      //Green
+      currentColor = pixels.Color(0, MAX_BRIGHTNESS, 0);
+      break;
+    case 6:
+      //Cyan
+      currentColor = pixels.Color(0, MAX_BRIGHTNESS, MAX_BRIGHTNESS*34/100);
+      break;
+    case 7:
+      //Blue
+      currentColor = pixels.Color(0, 0, MAX_BRIGHTNESS);
+      break;
+    case 8:
+      //Light Blue
+      currentColor = pixels.Color(0, MAX_BRIGHTNESS, MAX_BRIGHTNESS*63/100);
+      break;
+    case 9:
+      //Ice Blue
+      currentColor = pixels.Color(0, MAX_BRIGHTNESS, MAX_BRIGHTNESS);
+      break;
+    case 10:
+      //Mauve
+      currentColor = pixels.Color(MAX_BRIGHTNESS*12/100, 0, MAX_BRIGHTNESS);
+      break;
+    case 11:
+      //Purple
+      currentColor = pixels.Color(MAX_BRIGHTNESS*35/100, 0, MAX_BRIGHTNESS);
+      break;
+    case 12:
+      //Pink
+      currentColor = pixels.Color(MAX_BRIGHTNESS, 0, MAX_BRIGHTNESS);
+      break;
+    case 13:
+      //Crimson
+      currentColor = pixels.Color(MAX_BRIGHTNESS, 0, MAX_BRIGHTNESS*5/100);
+      break;
+    case 14:
+      //White
+      currentColor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS, MAX_BRIGHTNESS);
+      break;
+    case 15:
+      // LED1 and LED2 full on
+      currentColor = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS, 0);
+      break;
+    case 16:
+      // only LED3 is on
+      currentColor = pixels.Color(0, 0, MAX_BRIGHTNESS);
+      break;
+    default:
+      // White (if enough voltage)
+      currentColor = pixels.Color(100, 100, 100);
+      break;
   }
 } //getColorFix
 #endif
@@ -1219,70 +1220,56 @@ void BladeMeter (uint8_t ledPins[], int meterLevel) {  //expects input of 0-100
   if (meterLevel <= 0) { meterLevel = 0; } 
   if (meterLevel >= 100) { meterLevel = 100; }
 
-#ifdef LEDSTRINGS // light blade as 6 segment bar graph
-  meterLevel = meterLevel*6/100;
-    for (uint8_t i = 0; i < sizeof(ledPins); i++) {
-      if (i <= meterLevel) {
-        digitalWrite(ledPins[i], HIGH);
-      } else {
-        digitalWrite(ledPins[i], LOW);
-      }
-    }
-#endif
-
-#ifdef STAR_LED // light led in gradient from red to green
-  analogWrite(LED_BLUE,0);
-  analogWrite(LED_RED, (MAX_BRIGHTNESS * (100 - meterLevel))/255);
-  analogWrite(LED_GREEN, (MAX_BRIGHTNESS * meterLevel)/255);
-  //Serial.println((MAX_BRIGHTNESS * meterLevel)/255);
-//  unsigned int meterGreen = meterLevel * 255 / 100;
-//  unsigned int meterRed = (100 - meterLevel) * 255 / 100;
-#endif
-
-#ifdef PIXELBLADE // light blade as 3 color meter proportionate to length
-  cRGB value;
-  //set first pixel for accent LED compatability
-  if (meterLevel < 30) {
-    value.r = MAX_BRIGHTNESS/2;
-    value.g = 0;
-    value.b = 0;
-  } else if (meterLevel < 60) {
-    value.r = MAX_BRIGHTNESS/2*0.8;
-    value.g = MAX_BRIGHTNESS/2*0.6;
-    value.b = 0;
-  } else {
-    value.r = 0;
-    value.g = MAX_BRIGHTNESS/2;
-    value.b = 0;
-  }
-  pixels.set_crgb_at(0, value);
-
-  //set rest of blade
-  for (unsigned int i = 1; i < NUMPIXELS; i++) { // turn on/off one LED at a time
-      if (i < NUMPIXELS * meterLevel / 100){
-        if (i < (30 * NUMPIXELS / 100)) {
-          value.r = MAX_BRIGHTNESS;
-          value.g = 0;
-          value.b = 0;
-        } else if (i < (60 * NUMPIXELS / 100)) {
-          value.r = MAX_BRIGHTNESS;
-          value.g = MAX_BRIGHTNESS;
-          value.b = 0;
+  #ifdef LEDSTRINGS // light blade as 6 segment bar graph
+    meterLevel = meterLevel*6/100;
+      for (uint8_t i = 0; i < sizeof(ledPins); i++) {
+        if (i <= meterLevel) {
+          digitalWrite(ledPins[i], HIGH);
         } else {
-          value.r = 0;
-          value.g = MAX_BRIGHTNESS;
-          value.b = 0;
+          digitalWrite(ledPins[i], LOW);
         }
-      } else {
-      value.r=0;
-      value.g=0;
-      value.b=0;      
-      }      
-      pixels.set_crgb_at(i, value);
+      }
+  #endif
+
+  #ifdef STAR_LED // light led in gradient from red to green
+    analogWrite(LED_BLUE,0);
+    analogWrite(LED_RED, (MAX_BRIGHTNESS * (100 - meterLevel))/255);
+    analogWrite(LED_GREEN, (MAX_BRIGHTNESS * meterLevel)/255);
+    //Serial.println((MAX_BRIGHTNESS * meterLevel)/255);
+  //  unsigned int meterGreen = meterLevel * 255 / 100;
+  //  unsigned int meterRed = (100 - meterLevel) * 255 / 100;
+  #endif
+
+  #ifdef PIXELBLADE // light blade as 3 color meter proportionate to length
+    uint32_t value;
+    //set first pixel for accent LED compatability
+    if (meterLevel < 30) {
+      value = pixels.Color(MAX_BRIGHTNESS/2, 0, 0);
+    } else if (meterLevel < 60) {
+      value = pixels.Color(MAX_BRIGHTNESS/2*0.8, MAX_BRIGHTNESS/2*0.6, 0);
+    } else {
+      value = pixels.Color(0, MAX_BRIGHTNESS/2, 0);
     }
-    pixels.sync(); // Sends the data to the LEDs
-//    delay(3);
-#endif
+    pixels.setPixelColor(0, value);
+
+    //set rest of blade
+    for (unsigned int i = 1; i < NUMPIXELS; i++) { // turn on/off one LED at a time
+        if (i < NUMPIXELS * meterLevel / 100){
+          if (i < (30 * NUMPIXELS / 100)) {
+            value = pixels.Color(MAX_BRIGHTNESS, 0, 0);
+          } else if (i < (60 * NUMPIXELS / 100)) {
+            value = pixels.Color(MAX_BRIGHTNESS, MAX_BRIGHTNESS, 0);
+          } else {
+            value = pixels.Color(0, MAX_BRIGHTNESS, 0);
+          }
+        } else {
+          value = 0;
+        }      
+        pixels.setPixelColor(i, value);
+      }
+      pixels.show(); // Sends the data to the LEDs
+  //    delay(3);
+  #endif
 }
 
 #ifdef ADF_PIXIE_BLADE
@@ -1351,11 +1338,11 @@ void JukeBox_Stroboscope(uint8_t ledPins[]) {
 #ifdef JUKEBOX
 #ifdef PIXELBLADE
  
-void JukeBox_Stroboscope(cRGB color) {
+void JukeBox_Stroboscope(uint32_t color) {
 
  uint16_t variation = 0;
  uint16_t temp_variation=0;
- cRGB tempcolor;
+ uint32_t tempcolor;
 
  for (uint8_t i=0; i<=SAMPLESIZEAVERAGE-1;i++) {
   temp_variation=temp_variation + constrain(abs(analogRead(SPK1) - analogRead(SPK2)),0,512);
@@ -1367,15 +1354,15 @@ void JukeBox_Stroboscope(cRGB color) {
 
 
   for (uint16_t i = 1; i <= variation; i++) {
-    pixels.set_crgb_at(i, color);
+    pixels.setPixelColor(i, color);
   }
   tempcolor.r = 0;
   tempcolor.g = 0;
   tempcolor.b = 0; // RGB Value -> Off
   for (uint16_t i = (variation)+1; i <= NUMPIXELS; i++) {
-    pixels.set_crgb_at(i, tempcolor);
+    pixels.setPixelColor(i, tempcolor);
   }
-  pixels.sync();  
+  pixels.show();  
 
 }
 #endif
@@ -1436,38 +1423,38 @@ void FireBlade(uint8_t DominantColor) {
     // Step 4.  Map from heat cells to LED colors 
 /*#ifdef CROSSGUARDSABER
     for( int j = 0; j < CG_STRIPE; j++) {
-      cRGB color = HeatColor( heat_cg[j],DominantColor);
+      uint32_t color = HeatColor( heat_cg[j],DominantColor);
       //if( gReverseDirection ) {
       //  pixelnumber = (CG_STRIPE-1) - j;
       //} else {
       //  pixelnumber = j;
       //}
-      LED.set_crgb_at(j, color); // Set value at LED found at index j
+      LED.setPixelColor(j, color); // Set value at LED found at index j
     }
     for( int j = CG_STRIPE; j < CG_STRIPE + MN_STRIPE; j++) {
-      cRGB color = HeatColor( heat[j],DominantColor);
+      uint32_t color = HeatColor( heat[j],DominantColor);
       //if( gReverseDirection ) {
       //  pixelnumber = (CG_STRIPE + MN_STRIPE-1) - j;
       //} else {
       //  pixelnumber = j;
       //}
-      pixels.set_crgb_at(j, color); // Set value at LED found at index j
+      pixels.setPixelColor(j, color); // Set value at LED found at index j
     }
 #else*/
     for( int j = 0; j < sizeof(heat); j++) {
-       cRGB color = HeatColor( heat[j],DominantColor);
+       uint32_t color = HeatColor( heat[j],DominantColor);
        if (PIXELSTEP*j+1<=NUMPIXELS-1) {
         for (int i=0 ; i<PIXELSTEP; i++) {
-          pixels.set_crgb_at(PIXELSTEP*j+i, color); // Set value at LED found at index j
+          pixels.setPixelColor(PIXELSTEP*j+i, color); // Set value at LED found at index j
         }
-        //pixels.set_crgb_at(2*j, color); // Set value at LED found at index j
-        //pixels.set_crgb_at(2*j+1, color); // Set value at LED found at index j
+        //pixels.setPixelColor(2*j, color); // Set value at LED found at index j
+        //pixels.setPixelColor(2*j+1, color); // Set value at LED found at index j
        }
     }
 //#endif
 }
 
-// CRGB HeatColor( uint8_t temperature)
+// uint32_t HeatColor( uint8_t temperature)
 //
 // Approximates a 'black body radiation' spectrum for
 // a given 'heat' level.  This is useful for animations of 'fire'.
@@ -1478,14 +1465,18 @@ void FireBlade(uint8_t DominantColor) {
 // On AVR/Arduino, this typically takes around 70 bytes of program memory,
 // versus 768 bytes for a full 256-entry RGB lookup table.
 
-cRGB HeatColor( uint8_t temperature, uint8_t DominantColor)
+uint32_t HeatColor( uint8_t temperature, uint8_t DominantColor)
 {
-    cRGB heatcolor;
+    uint32_t heatcolor;
 
     // Scale 'heat' down from 0-255 to 0-191,
     // which can then be easily divided into three
     // equal 'thirds' of 64 units each.
-    uint8_t t192 = scale8_video( temperature, 192);
+
+    uint8_t t192 = round((temperature/255.0)*191.0);
+    // THIS ONE ISN'T WORKING, SO I JUST IMPLEMENTED MY OWN, MUCH LESS PERFORMANT VERSION ^^
+    // uint8_t t192 = scale8_video(temperature, 192);
+    
      //Serial.print(F("scale8_video_result: "));
      //Serial.print(temperature);Serial.print("/t");Serial.println(t192);
 
@@ -1498,55 +1489,37 @@ cRGB HeatColor( uint8_t temperature, uint8_t DominantColor)
     if( t192 & 0x80) {
         if (DominantColor==0 or DominantColor>2) { // red
           // we're in the hottest third
-          heatcolor.r = 255; // full red
-          heatcolor.g = 255; // full green
-          heatcolor.b = heatramp; // ramp up blue
+          heatcolor = pixels.Color(255,255,heatramp);
         }
         else if (DominantColor==1) { // green
           // we're in the hottest third
-          heatcolor.g = 255; // full green
-          heatcolor.b = 255; // full blue
-          heatcolor.r = heatramp; // ramp up red
+          heatcolor = pixels.Color(heatramp,255,255);
         }
         else if (DominantColor==2) { // blue
           // we're in the hottest third
-          heatcolor.b = 255; // full blue
-          heatcolor.g = 255; // full green
-          heatcolor.r = heatramp; // ramp up red
+          heatcolor = pixels.Color(heatramp,255,255);
         }
       } else if( t192 & 0x40 ) {
         // we're in the middle third
         if (DominantColor==0 or DominantColor>2) { // red
-          heatcolor.r = 255; // full red
-          heatcolor.g = heatramp; // ramp up green
-          heatcolor.b = 0; // no blue
+          heatcolor = pixels.Color(255,heatramp,0);
         }
         else if (DominantColor==1) { // green
-          heatcolor.g = 255; // full green
-          heatcolor.b = heatramp; // ramp up blue
-          heatcolor.r = 0; // no red
+          heatcolor = pixels.Color(0,255,heatramp);
         }
         else if (DominantColor==2) { // blue
-          heatcolor.b = 255; // full blue
-          heatcolor.g = heatramp; // ramp up green
-          heatcolor.r = 0; // no red
+          heatcolor = pixels.Color(0,heatramp,255);
         }
     } else {
         // we're in the coolest third
         if (DominantColor==0 or DominantColor>2) { // red
-          heatcolor.r = heatramp; // ramp up red
-          heatcolor.g = 0; // no green
-          heatcolor.b = 0; // no blue
+          heatcolor = pixels.Color(heatramp,0,0);
         }
         else if (DominantColor==1) { // green
-          heatcolor.g = heatramp; // ramp up green
-          heatcolor.b = 0; // no blue
-          heatcolor.r = 0; // no red          
+          heatcolor = pixels.Color(0,heatramp,0);      
         }
         else if (DominantColor==2) { // blue
-          heatcolor.b = heatramp; // ramp up blue
-          heatcolor.g = 0; // no green
-          heatcolor.r = 0; // no red         
+          heatcolor = pixels.Color(0,0,heatramp);   
         }
     }
 
@@ -1571,13 +1544,14 @@ cRGB HeatColor( uint8_t temperature, uint8_t DominantColor)
     }
   }
     for( int j = 0; j < NUMPIXELS; j++) {
-      cRGB color = HeatColor( heat[j],1);
-      pixels.set_crgb_at(j, color); // Set value at LED found at index j
+      uint32_t color = HeatColor( heat[j],1);
+      pixels.setPixelColor(j, color); // Set value at LED found at index j
     }
-    pixels.sync();  
+    pixels.show();  
   }
 }*/
 
+/*
 uint8_t scale8_video( uint8_t i, uint8_t scale)
 {
 //    uint8_t j = (((int)i * (int)scale) >> 8) + ((i&&scale)?1:0);
@@ -1600,31 +1574,25 @@ uint8_t scale8_video( uint8_t i, uint8_t scale)
 
     return j;
 }
+*/
 #endif
 #endif // ANIBLADE
 
 #ifdef COLOR_PROFILE
-cRGB setColorProfile(cRGB currentcolor) {
-// Red  
-colorProfiles[0].r=255;
-colorProfiles[0].g=0;
-colorProfiles[0].b=0;
-// Green  
-colorProfiles[1].r=0;
-colorProfiles[1].g=255;
-colorProfiles[1].b=0;
-// Blue  
-colorProfiles[2].r=0;
-colorProfiles[2].g=0;
-colorProfiles[2].b=255;
-// Orange  
-colorProfiles[3].r=255;
-colorProfiles[3].g=100;
-colorProfiles[3].b=0;
-// Cyan  
-colorProfiles[4].r=0;
-colorProfiles[4].g=100;
-colorProfiles[4].b=255;
+uint32_t setColorProfile(uint32_t currentcolor) {
+  // Red  
+  colorProfiles[0] = pixels.Color(255,0,0);
+  // Green  
+  colorProfiles[1] = pixels.Color(0,255,0);
+  // Blue  
+  colorProfiles[2] = pixels.Color(0,0,255);
+  // Orange  
+  colorProfiles[3] = pixels.Color(255,100,0);
+  // Cyan  
+  colorProfiles[4] = pixels.Color(0,100,255);
+
+  // TODO: Figure out what this is actually supposed to return, currently I'm just returning currentColor to avoid an error
+  return currentColor;
 }
 #endif
 
@@ -1656,10 +1624,10 @@ void AccentMeter (int MeterLevel) {
   #ifdef PIXEL_ACCENT
   if (NUM_ACCENT_PIXELS < 3){
     for (int i=0; i<=NUM_ACCENT_PIXELS; i++) {
-        accentPixels.set_crgb_at(i, {PIXEL_ACCENT_BRIGHTNESS * (100 - MeterLevel) / 100,PIXEL_ACCENT_BRIGHTNESS * MeterLevel / 100,0});
+        accentPixels.setPixelColor(i, {PIXEL_ACCENT_BRIGHTNESS * (100 - MeterLevel) / 100,PIXEL_ACCENT_BRIGHTNESS * MeterLevel / 100,0});
     }
   }
-  accentPixels.sync();
+  accentpixels.show();
   #endif    
 }
 
@@ -1671,38 +1639,44 @@ void pixelAccentUpdate() {
   if (SaberState == S_SLEEP) tB = 0;
   if (SaberState == S_CONFIG) {
     if (ConfigModeSubStates == CS_SOUNDFONT) {
-      accentPixels.set_crgb_at(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
+      accentPixels.setPixelColor(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
     } else if (ConfigModeSubStates == CS_SOUNDFONT || ConfigModeSubStates == CS_MAINCOLOR || ConfigModeSubStates == CS_CLASHCOLOR || ConfigModeSubStates == CS_BLASTCOLOR) {
       switch (modification) {
         case (0): // red +
-          accentPixels.set_crgb_at(0, {tB, 0, 0});
+          accentPixels.setPixelColor(0, {tB, 0, 0});
           break;
         case (1): // red -
-          accentPixels.set_crgb_at(0, {tB / 4, 0, 0});
+          accentPixels.setPixelColor(0, {tB / 4, 0, 0});
           break;
         case (2): // green +
-          accentPixels.set_crgb_at(0, {0, tB, 0});
+          accentPixels.setPixelColor(0, {0, tB, 0});
           break;
         case (3): // green -
-          accentPixels.set_crgb_at(0, {0, tB / 4, 0});
+          accentPixels.setPixelColor(0, {0, tB / 4, 0});
           break;
         case (4): // blue +
-          accentPixels.set_crgb_at(0, {0, 0, tB});
+          accentPixels.setPixelColor(0, {0, 0, tB});
           break;
         case (5): // blue -
-          accentPixels.set_crgb_at(0, {0, 0, tB / 4});
+          accentPixels.setPixelColor(0, {0, 0, tB / 4});
           break;
       }
     } else if (ConfigModeSubStates == CS_BATTERYLEVEL || ConfigModeSubStates == CS_VOLUME || ConfigModeSubStates == CS_SWINGSENSITIVITY){
     } else {
-      accentPixels.set_crgb_at(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
+      accentPixels.setPixelColor(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
     }
   } else {
-    accentPixels.set_crgb_at(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
-    if (ActionModeSubStates == AS_BLASTERDEFLECTMOTION && (millis() - lastAccent > 300) && (millis() - lastAccent <= 600)) accentPixels.set_crgb_at(0, {storage.sndProfile[storage.soundFont].blasterboltColor.r*tB / 255, storage.sndProfile[storage.soundFont].blasterboltColor.g*tB / 255, storage.sndProfile[storage.soundFont].blasterboltColor.b*tB / 255}); //{tB,tB,tB});//
-    if (lockuponclash && (millis() - lastAccent >= 600)) accentPixels.set_crgb_at(0, {storage.sndProfile[storage.soundFont].clashColor.r*tB / 255, storage.sndProfile[storage.soundFont].clashColor.g*tB / 255, storage.sndProfile[storage.soundFont].clashColor.b*tB / 255}); //{tB,tB,tB});//
+    accentPixels.setPixelColor(0, {storage.sndProfile[storage.soundFont].mainColor.r*tB / 255, storage.sndProfile[storage.soundFont].mainColor.g*tB / 255, storage.sndProfile[storage.soundFont].mainColor.b*tB / 255}); //{tB,tB,tB});//
+    if (ActionModeSubStates == AS_BLASTERDEFLECTMOTION && (millis() - lastAccent > 300) && (millis() - lastAccent <= 600)) accentPixels.setPixelColor(0, {storage.sndProfile[storage.soundFont].blasterboltColor.r*tB / 255, storage.sndProfile[storage.soundFont].blasterboltColor.g*tB / 255, storage.sndProfile[storage.soundFont].blasterboltColor.b*tB / 255}); //{tB,tB,tB});//
+    if (lockuponclash && (millis() - lastAccent >= 600)) accentPixels.setPixelColor(0, {storage.sndProfile[storage.soundFont].clashColor.r*tB / 255, storage.sndProfile[storage.soundFont].clashColor.g*tB / 255, storage.sndProfile[storage.soundFont].clashColor.b*tB / 255}); //{tB,tB,tB});//
   }
   
-  accentPixels.sync();
+  accentpixels.show();
   #endif
 }
+
+void UnpackColor(uint32_t color, uint8_t& r, uint8_t& g, uint8_t& b) {
+  r = (color >> 16) & 0xFF; // Extract red component
+  g = (color >> 8) & 0xFF;  // Extract green component
+  b = color & 0xFF;         // Extract blue component
+};

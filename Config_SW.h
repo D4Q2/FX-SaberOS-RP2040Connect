@@ -17,6 +17,8 @@ This is useful for keeping track of custom builds or which version has been inst
 It is important to note that this will take up some memory in proportion the the length of the file location/name */
 //#define INCLUDE_COMPILE_INFO
 
+// WHETHER TO USE WATCHDOG
+//#define USE_WATCHDOG
 
 /*
  * DEFAULT CONFIG PARAMETERS
@@ -141,11 +143,11 @@ It is important to note that this will take up some memory in proportion the the
  * If you a device with a CPU wich is not
  * an Atmega328 : COMMENT THIS
  *************************************/
-#define DEEP_SLEEP
+//#define DEEP_SLEEP
 #if defined DEEP_SLEEP
   #define SLEEPYTIME      (1000UL * 60 * 2) //2 mins, after which the board will automatically go to sleep mode (to be implemented)
-  #include <avr/sleep.h>
-  #include <avr/power.h>
+  //#include <avr/sleep.h>
+  //#include <avr/power.h>
 #endif  // DEEP_SLEEP
 
 
@@ -160,7 +162,7 @@ It is important to note that this will take up some memory in proportion the the
   #define COLOR_PROFILE
 #endif
 
-#define ANIBLADE
+//#define ANIBLADE
 
 /*
  * Uncomment to enable a slight color change when performing a swing.

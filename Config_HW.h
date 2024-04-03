@@ -24,6 +24,14 @@
 //#define DIYINO_STARDUST_V2
 //#define DIYINO_STARDUST_V3
 
+// GYROSCOPE SELECTION
+//#define USE_MPU_6050
+#define USE_LSM6DSOX
+
+// AUDIO SELECTION
+//#define USE_DFPLAYER
+#define USE_RAW_SPEAKER
+
 /***** BOARD PINOUT DEFINITIONS ******/
 
 /*
@@ -35,15 +43,14 @@
 
 // If your saber has only a single button to interact with the electronics, uncomment the next line
 // in case you have 2 buttons (referred to as main and aux buttons) leave this line commented out
-
-//#define SINGLEBUTTON
+#define SINGLEBUTTON
  
 #ifdef DIYINO_PRIME 
-  #define MAIN_BUTTON     12
+  #define MAIN_BUTTON     25
   #ifndef SINGLEBUTTON
     #define AUX_BUTTON   4
   #endif
-#else if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3
+#elif defined(DIYINO_STARDUST_V2) or defined(DIYINO_STARDUST_V3)
   #define MAIN_BUTTON      12
   #ifndef SINGLEBUTTON
     #define AUX_BUTTON   11 // 2
@@ -71,9 +78,9 @@
  * will have any effect on the code
  * due to the fire blade effect
  *************************************/
-#define SINGLEBLADE  // i.e. Graflex
+//#define SINGLEBLADE  // i.e. Graflex
 //#define SABERSTAFF  // i.e. Darth Maul saber with dual blades
-//#define CROSSGUARDSABER  // i.e. Kylo Ren saber
+#define CROSSGUARDSABER  // i.e. Kylo Ren saber
 
 /*
  * POWER SAVING CIRCUITRY
@@ -86,7 +93,7 @@
 #ifdef DIYINO_PRIME 
   #define MP3_PSWITCH 15 // A1
   #define FTDI_PSWITCH 16 // A2
-#else if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3 
+#elif defined(DIYINO_STARDUST_V2) or defined(DIYINO_STARDUST_V3)
   #define MP3_PSWITCH 17 // A3
   #define FTDI_PSWITCH 16 // A2
 #endif
@@ -106,7 +113,7 @@
     #define LED_RED       3
     #define LED_GREEN       5
     #define LED_BLUE      6
-  #else if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3
+  #elif defined(DIYINO_STARDUST_V2) or defined(DIYINO_STARDUST_V3)
     #define LED_RED       5
     #define LED_GREEN       6
     #define LED_BLUE      9
@@ -122,10 +129,10 @@
   
   #ifdef PIXELBLADE
     // How many leds in one strip?
-    #define NUMPIXELS 115  // can go up to 120, could lead to memory overflow if further increased, causing instability
+    #define NUMPIXELS 120  // can go up to 120, could lead to memory overflow if further increased, causing instability
     // For led chips like NEOPIXELs, which have a data line, ground, and power, you just
     // need to define DATA_PIN.
-    #define DATA_PIN       13 // D13
+    #define DATA_PIN 15
   #endif
 
   #ifdef ADF_PIXIE_BLADE
@@ -133,17 +140,14 @@
     #define PIXIEPIN  13 // Pin number for SoftwareSerial output
   #endif
   
-
-  
   #ifdef CROSSGUARDSABER
-    // define how many pixels are used for the crossguard and how many for the main blade
-    #define CROSSGUARD_LENGTH 10 // cross guard stripe length
-    #define MAINBLADE_LENGTH 50 // main blade stripe length
+    // define how many pixels are used for the crossguard and how many for the main blade - Assuming blades are wired with each half in parallel
+    #define CROSSGUARD_LENGTH 16 // cross guard strip length - This is for half of one crossguard blade (all 4 in parallel)
+    #define MAINBLADE_LENGTH 104 // main blade strip length - This is for half of the main blade
     #define CROSSGUARD_OFFSET 0
-    #define MAINBLADE_OFFSET 10
-    #define STAGGERED_IGNITION_DELAY 1000
+    #define MAINBLADE_OFFSET 16
+    #define STAGGERED_IGNITION_DELAY 750
   #endif
-
 
   #ifdef DIYINO_PRIME
     #define LS1       3
@@ -152,7 +156,7 @@
     #define LS4       9
     #define LS5       10
     #define LS6       11
-  #else if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3
+  #elif defined(DIYINO_STARDUST_V2) or defined(DIYINO_STARDUST_V3)
     #define LS1       5
     #define LS2       6
     #define LS3      9
@@ -174,7 +178,7 @@
   #ifdef HARD_ACCENT
     #define ACCENT_LED 14 //A0
   #endif
-#else if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3
+#elif defined(DIYINO_STARDUST_V2) or defined(DIYINO_STARDUST_V3)
   #ifdef HARD_ACCENT
     #define ACCENT_LED 14 //A0 is an auxiliary pin on Stardust v2
   #endif
@@ -189,7 +193,7 @@
 /*
  * Uncomment to correct sound issues (e.g. incorrectly looping sounds) when using a DFPlayer clone chip such as the MH2024K-24SS
  */
-#define DFPLAYER_CLONE
+//#define DFPLAYER_CLONE
 /*
  * Some DFPlayer versions cannot handle commands sent at high frequency, so ensure a minimum delay between commands.
  * Increase if you notice certain sounds not being played, but don't set too high or sounds and effects will become less responsive.
@@ -199,7 +203,7 @@
 #endif
 
 
-#define BATTERY_CHECK // comment to disable
+//#define BATTERY_CHECK // comment to disable
 #ifdef BATTERY_CHECK
   #ifdef DIYINO_PRIME
     #define BATTERY_READPIN 17 //A3 - read battery level
@@ -234,4 +238,3 @@
 #endif
 
 #endif /* CONFIG_HW_H_ */
-
