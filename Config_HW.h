@@ -119,9 +119,9 @@
     #define LED_BLUE      9
   #endif
 
-#if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-#include <Wire.h>
-#endif
+  #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
+    #include <Wire.h>
+  #endif
 
   #if defined LEDSTRINGS or defined STAR_LED
     #define NUMPIXELS 0
@@ -129,7 +129,7 @@
   
   #ifdef PIXELBLADE
     // How many leds in one strip?
-    #define NUMPIXELS 120  // can go up to 120, could lead to memory overflow if further increased, causing instability
+    #define NUMPIXELS 124  // can go up to 120, could lead to memory overflow if further increased, causing instability
     // For led chips like NEOPIXELs, which have a data line, ground, and power, you just
     // need to define DATA_PIN.
     #define DATA_PIN 15
@@ -143,7 +143,7 @@
   #ifdef CROSSGUARDSABER
     // define how many pixels are used for the crossguard and how many for the main blade - Assuming blades are wired with each half in parallel
     #define CROSSGUARD_LENGTH 16 // cross guard strip length - This is for half of one crossguard blade (all 4 in parallel)
-    #define MAINBLADE_LENGTH 104 // main blade strip length - This is for half of the main blade
+    #define MAINBLADE_LENGTH 108 // main blade strip length - This is for half of the main blade
     #define CROSSGUARD_OFFSET 0
     #define MAINBLADE_OFFSET 16
     #define STAGGERED_IGNITION_DELAY 750

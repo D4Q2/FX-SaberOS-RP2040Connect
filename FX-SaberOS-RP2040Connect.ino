@@ -31,6 +31,8 @@
   #include <avr/wdt.h>
 #endif
 
+bool copied = false;
+
 /*
 * DFPLAYER variables
 */
@@ -43,15 +45,22 @@
   #include "AudioTools.h"
 
   // REQUIRED: Change this to whatever pin your speaker is on (must be a pwm pin)
-  #define SPEAKER_PIN 9
+  #define SPEAKER_PIN 21
 
   // OPTIONAL: Change this if files aren't 22khz, 16 bits per sample
   AudioInfo info(22050, 1, 16);
 
   // Decode and output the .wav files on a PWM pin
   PWMAudioOutput pwm;
+  PWMAudioOutput pwmOn;
+
   EncodedAudioStream out(&pwm, new WAVDecoder());
+  EncodedAudioStream outOn(&pwmOn, new WAVDecoder());
+
   StreamCopy copier;
+  StreamCopy copierOn;
+
+  auto config = pwm.defaultConfig();
   // The current audio file
   File audioFile;
   File root;
@@ -221,7 +230,6 @@ void setup() {
   #endif
   // Serial line for debug
   Serial.begin(115200);
-  Serial.println("FX-SaberOS modified by Daniel with VSCode");
   
   #ifdef INCLUDE_COMPILE_INFO
     const char compile_date[] = __DATE__ " " __TIME__;
@@ -546,27 +554,24 @@ void setup() {
   #elif defined USE_RAW_SPEAKER
     #ifdef LS_INFO
       AudioLogger::instance().begin(Serial, AudioLogger::Info);  
+      Serial.println("RAW SPEAKER BEING USED");
     #endif
-    Serial.println("RAW SPEAKER BEING USED");
     // Setup SD
-    SD.begin(10);
-    root = SD.open("/");
-    File test = root.openNextFile();
-    test.close();
+    if (!SD.begin(5)) {
+      Serial.println("SD FAIL");
+    }
 
     // Set the speaker pin and audio settings for 
-    auto config = pwm.defaultConfig();
     config.copyFrom(info);
-    // Set the speaker pin
     Pins pins;
     pins.push_back(SPEAKER_PIN);
-    config.setPins(pins); 
-
-    // Initialize sound objects
-    pwm.begin(config);
-    out.begin();
+    config.setPins(pins);
 
     SinglePlay_Sound("00_boot");
+
+    out.begin();
+    copier.begin(out, audioFile);
+    copier.setDelayOnNoData(0);
   #endif
   
   Serial.println(soundFont.getBoot((storage.soundFont)));
@@ -574,25 +579,26 @@ void setup() {
   #ifdef ADF_PIXIE_BLADE
     InitAdafruitPixie(ledPins);
   #endif
-    //SinglePlay_Sound(11);
-    //delay(850);
 
-    /***** Quick Mute *****/
-    if (digitalRead(MAIN_BUTTON) == LOW) {
-      Set_Volume(0);
-      //Serial.println("Muted");
-    }
-    else {
-      Set_Volume(storage.volume);
-      //Serial.println("Unmuted");
-    }
-    /****** INIT SABER STATE VARIABLE *****/
-    SaberState = S_STANDBY;
-    PrevSaberState = S_SLEEP;
-    ActionModeSubStates = AS_HUM;
-    #ifdef DEEP_SLEEP
-      sleepTimer = millis();
-    #endif
+  //SinglePlay_Sound(11);
+  //delay(850);
+
+  /***** Quick Mute *****/
+  if (digitalRead(MAIN_BUTTON) == LOW) {
+    Set_Volume(0);
+    //Serial.println("Muted");
+  }
+  else {
+    Set_Volume(storage.volume);
+    //Serial.println("Unmuted");
+  }
+  /****** INIT SABER STATE VARIABLE *****/
+  SaberState = S_STANDBY;
+  PrevSaberState = S_SLEEP;
+  ActionModeSubStates = AS_HUM;
+  #ifdef DEEP_SLEEP
+    sleepTimer = millis();
+  #endif
 } // end setup
 
 // ====================================================================================
@@ -638,11 +644,13 @@ void loop() {
     if (ActionModeSubStates != AS_HUM) { // needed for hum relauch only in case it's not already being played
       hum_playing = false;
     }
-    else { // AS_HUM
-      if ((millis() - sndSuppress > HUM_RELAUNCH and not hum_playing)) {
-        HumRelaunch();
+    #ifdef USE_DFPLAYER
+      else { // AS_HUM
+        if ((millis() - sndSuppress > HUM_RELAUNCH and not hum_playing)) {
+          HumRelaunch();
+        }
       }
-    }
+    #endif
 
     if (ActionModeSubStates == AS_IGNITION) {
       /*
@@ -664,6 +672,7 @@ void loop() {
       #elif defined(USE_RAW_SPEAKER)
         SinglePlay_Sound("01_poweron");
       #endif
+
       // Light up the blade
       pixelblade_KillKey_Disable();
       #ifdef CROSSGUARDSABER
@@ -700,7 +709,7 @@ void loop() {
       #endif
     }
     // ************************* blade movement detection ************************************
-    //Let's get our values !
+    // Let's get our values !
     motionEngine();
 
     /*
@@ -892,10 +901,12 @@ void loop() {
       else if (ActionModeSubStates == AS_BLASTERDEFLECTMOTION) {
         accentLEDControl(AL_PULSE);
       }
-      // relaunch hum if more than HUM_RELAUNCH time elapsed since entering AS_HUM state
-      if (millis() > sndSuppress and millis() - sndSuppress > HUM_RELAUNCH and (not hum_playing) and ActionModeSubStates != AS_BLADELOCKUP and ActionModeSubStates != AS_TIPMELT) {
-        HumRelaunch();
-      }
+      #ifdef USE_DFPLAYER
+        // relaunch hum if more than HUM_RELAUNCH time elapsed since entering AS_HUM state
+        if (millis() > sndSuppress and millis() - sndSuppress > HUM_RELAUNCH and (not hum_playing) and ActionModeSubStates != AS_BLADELOCKUP and ActionModeSubStates != AS_TIPMELT) {
+          HumRelaunch();
+        }
+      #endif
 
       #ifdef SMOOTH_SWING
         uint8_t minVolRevisionInterval = 150; // revise volume every 150ms
@@ -1257,74 +1268,78 @@ void loop() {
 // ====================================================================================
 // ===           	  			MOTION DETECTION FUNCTIONS	            			===
 // ====================================================================================
-inline void motionEngine() {
 #ifdef USE_MPU_6050
-    // if programming failed, don't try to do anything
-    if (!dmpReady)
-      return;
+  inline void motionEngine() {
+        // if programming failed, don't try to do anything
+        if (!dmpReady)
+          return;
 
-    // wait for MPU interrupt or extra packet(s) available
-    //	while (!mpuInterrupt && mpuFifoCount < packetSize) {
-    //		/* other program behavior stuff here
-    //		 *
-    //		 * If you are really paranoid you can frequently test in between other
-    //		 * stuff to see if mpuInterrupt is true, and if so, "break;" from the
-    //		 * while() loop to immediately process the MPU data
-    //		 */
-    //	}
-    // reset interrupt flag and get INT_STATUS byte
-    mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
+        // wait for MPU interrupt or extra packet(s) available
+        //	while (!mpuInterrupt && mpuFifoCount < packetSize) {
+        //		/* other program behavior stuff here
+        //		 *
+        //		 * If you are really paranoid you can frequently test in between other
+        //		 * stuff to see if mpuInterrupt is true, and if so, "break;" from the
+        //		 * while() loop to immediately process the MPU data
+        //		 */
+        //	}
+        // reset interrupt flag and get INT_STATUS byte
+        mpuInterrupt = false;
+        mpuIntStatus = mpu.getIntStatus();
 
-    // get current FIFO count
-    mpuFifoCount = mpu.getFIFOCount();
-
-    // check for overflow (this should never happen unless our code is too inefficient)
-    if ((mpuIntStatus & 0x10) || mpuFifoCount == 1024) {
-      // reset so we can continue cleanly
-      mpu.resetFIFO();
-
-      // otherwise, check for DMP data ready interrupt (this should happen frequently)
-    } else if (mpuIntStatus & 0x02) {
-      // wait for correct available data length, should be a VERY short wait
-      while (mpuFifoCount < packetSize)
+        // get current FIFO count
         mpuFifoCount = mpu.getFIFOCount();
 
-      // read a packet from FIFO
-      mpu.getFIFOBytes(fifoBuffer, packetSize);
+        // check for overflow (this should never happen unless our code is too inefficient)
+        if ((mpuIntStatus & 0x10) || mpuFifoCount == 1024) {
+          // reset so we can continue cleanly
+          mpu.resetFIFO();
 
-      // track FIFO count here in case there is > 1 packet available
-      // (this lets us immediately read more without waiting for an interrupt)
-      mpuFifoCount -= packetSize;
+          // otherwise, check for DMP data ready interrupt (this should happen frequently)
+        } else if (mpuIntStatus & 0x02) {
+          // wait for correct available data length, should be a VERY short wait
+          while (mpuFifoCount < packetSize)
+            mpuFifoCount = mpu.getFIFOCount();
 
-  #if defined SWING_QUATERNION || defined SMOOTH_SWING
-      //Making the last orientation the reference for next rotation
-      prevOrientation = curOrientation.getConjugate();
-  #endif // SWING_QUATERNION or SMOOTH_SWING
-      prevAccel = curAccel;
+          // read a packet from FIFO
+          mpu.getFIFOBytes(fifoBuffer, packetSize);
 
-      //retrieve current orientation value
-  #if defined SWING_QUATERNION || defined SMOOTH_SWING
-      mpu.dmpGetQuaternion(&curOrientation, fifoBuffer);
-  #endif // SWING_QUATERNION or SMOOTH_SWING
-      mpu.dmpGetAccel(&curAccel, fifoBuffer);
-      curDeltAccel.x = prevAccel.x - curAccel.x;
-      curDeltAccel.y = prevAccel.y - curAccel.y;
-      curDeltAccel.z = prevAccel.z - curAccel.z;
+          // track FIFO count here in case there is > 1 packet available
+          // (this lets us immediately read more without waiting for an interrupt)
+          mpuFifoCount -= packetSize;
 
-  #if defined SWING_QUATERNION || defined SMOOTH_SWING
-      //We calculate the rotation quaternion since last orientation
-      prevRotation = curRotation;
-      curRotation = prevOrientation.getProduct(
-                      curOrientation.getNormalized());
-  #endif // SWING_QUATERNION or SMOOTH_SWING
-  #if defined LS_MOTION_HEAVY_DEBUG
-      // display quaternion values in easy matrix form: w x y z
-      printQuaternion(curRotation);
-  #endif
-    }
+      #if defined SWING_QUATERNION || defined SMOOTH_SWING
+          //Making the last orientation the reference for next rotation
+          prevOrientation = curOrientation.getConjugate();
+      #endif // SWING_QUATERNION or SMOOTH_SWING
+          prevAccel = curAccel;
+
+          //retrieve current orientation value
+      #if defined SWING_QUATERNION || defined SMOOTH_SWING
+          mpu.dmpGetQuaternion(&curOrientation, fifoBuffer);
+      #endif // SWING_QUATERNION or SMOOTH_SWING
+          mpu.dmpGetAccel(&curAccel, fifoBuffer);
+          curDeltAccel.x = prevAccel.x - curAccel.x;
+          curDeltAccel.y = prevAccel.y - curAccel.y;
+          curDeltAccel.z = prevAccel.z - curAccel.z;
+
+      #if defined SWING_QUATERNION || defined SMOOTH_SWING
+          //We calculate the rotation quaternion since last orientation
+          prevRotation = curRotation;
+          curRotation = prevOrientation.getProduct(
+                          curOrientation.getNormalized());
+      #endif // SWING_QUATERNION or SMOOTH_SWING
+      #if defined LS_MOTION_HEAVY_DEBUG
+          // display quaternion values in easy matrix form: w x y z
+          printQuaternion(curRotation);
+      #endif
+        }
+  } //motionEngine
+#elif defined(USE_LSM6DSOX)
+  inline void motionEngine() {
+    // TODO: Implement LSM6DSOX logic here (it has it's own FIFO buffer system but I don't think it supports quaternions)
+  }
 #endif
-} //motionEngine
 
 inline void dmpDataReady() {
   mpuInterrupt = true;
@@ -1435,11 +1450,11 @@ void FX_Clash() {
         }
 }
 #ifdef CLASH_DET_MPU_INT
-  void ISR_MPUInterrupt() {
-      if (SaberState==S_SABERON) {
-        FX_Clash();
-      }
-  }
+void ISR_MPUInterrupt() {
+    if (SaberState==S_SABERON) {
+      FX_Clash();
+    }
+}
 #endif
 
 void FX_BlasterBlock() {
@@ -1497,12 +1512,12 @@ inline bool loadConfig() {
 
 inline void saveConfig() {
   EEPROM.put(configAdress, storage);
-//#ifdef LS_DEBUG
-  // dump values stored in EEPROM
-  //for (uint8_t i = 0; i < 255; i++) {
-  //  Serial.print(i); Serial.print(F("\t")); Serial.println(EEPROM.read(i));
-  //}
-//#endif
+  //#ifdef LS_DEBUG
+    // dump values stored in EEPROM
+    //for (uint8_t i = 0; i < 255; i++) {
+    //  Serial.print(i); Serial.print(F("\t")); Serial.println(EEPROM.read(i));
+    //}
+  //#endif
 } //saveConfig
 
 
@@ -1519,20 +1534,21 @@ void DumpConfigEEPROM() {
 // ===                          SOUND FUNCTIONS                                     ===
 // ====================================================================================
 
-void HumRelaunch() {
-  LoopPlay_Sound(soundFont.getHum((storage.soundFont)*NR_FILE_SF));
-  sndSuppress = millis();
-  hum_playing = true;
-}
 
 #ifdef USE_DFPLAYER
   void SinglePlay_Sound(uint8_t track) {
     dfplayer.playPhysicalTrack(track);
-  #ifdef DFPLAYER_CLONE
-    dfplayer.setSingleLoop(false); // fixes incorrect looping of certain sounds on clone chips
-  #endif
+    #ifdef DFPLAYER_CLONE
+      dfplayer.setSingleLoop(false); // fixes incorrect looping of certain sounds on clone chips
+    #endif
   }
 
+  void HumRelaunch() {
+    LoopPlay_Sound(soundFont.getHum((storage.soundFont)*NR_FILE_SF));
+    sndSuppress = millis();
+    hum_playing = true;
+  }
+  
   void LoopPlay_Sound(uint8_t track) {
     dfplayer.playSingleLoop(track);
   }
@@ -1564,13 +1580,35 @@ void HumRelaunch() {
     dfplayer.play();
   }
 #elif defined(USE_RAW_SPEAKER)
+  // If a sound ends, play a hum sound if saber is on or stop sound if saber is off
   void KeepSoundsPlaying() {
     if (!copier.copy()) {
-      stop();
+      Serial.println("SOUND ENDED -> ");
+      if (SaberState == S_SABERON && ActionModeSubStates == AS_HUM) {
+        //Serial.println("Starting new hum");
+        audioFile.close();
+        pwm.end();
+        delay(50);
+        audioFile = SD.open("/SF01_VanillaLyte/11_hum.wav");
+        pwm.begin(config);
+      }
+      else if (SaberState != S_SABERON) {
+        Serial.println("Stopping sound");
+        pwm.end();
+        audioFile.close();
+      }
     }
   }
 
   void SinglePlay_Sound(String track) {
+    Serial.print("Requesting sound ");
+    Serial.println(track);
+    
+    if (SaberState == S_SABERON) {
+      audioFile.close();
+      pwm.end();
+    }
+
     String folder;
     // If track contains - (only config tracks have a -)
     if (track.indexOf(F("-")) != -1) {
@@ -1584,49 +1622,55 @@ void HumRelaunch() {
         folder = "0" + folder;
       }
       folder = "SF" + folder;
+      Serial.print("Searching for folder starting with ");
+      Serial.print(folder);
+      Serial.print("...");
 
-      // Now that we know what the font folder starts with, search over the SD for that folder to get the full name
+      root = SD.open("/");
+      // Now that we know what the font folder starts with, search the root folder for a folder starting with that string
       while (true) {
         File entry = root.openNextFile();
 
         // If null, no more entries so break out
         if (!entry) {
-          Serial.println("Didn't find entry, breaking");
-          break;
+          Serial.println("That was the last entry, returning. (NO SOUND COULD BE PLAYED)");
+          return;
         }
-        Serial.print(entry.name());
-        Serial.print("...");
 
         // If the name of this folder contains the font name we're looking for, this is the correct folder
         String folderName = String(entry.name());
         if (folderName.indexOf(folder) != -1) {
-          Serial.println("That's it!");
-          folder = entry.name();
+          Serial.print("Found ");
+          Serial.println(folderName);
+          folder = folderName;
+          entry.close();
           break;
         }
-        Serial.println("Nope");
+        Serial.print("Not ");
+        Serial.print(folderName);
+        Serial.print("...");
         entry.close();
       }
+      root.close();
     }
 
     // If this is a track with multiple options, select a random option
     String fileName = track;
     if (track == F("01_poweron")) {
-      fileName += "0" + random(1,4);
+      fileName += "0" + String(random(1,5));
     }
     else if (track == F("02_poweroff")) {
-      fileName += "0" + random(1,2);
+      fileName += "0" + String(random(1,3));
     }
     else if (track == F("03_swing")) {
-      fileName += "0" + random(1,8);
+      fileName += "0" + String(random(1,9));
     }
     else if (track == F("05_clash")) {
-      fileName += "0" + random(1,8);
+      fileName += "0" + String(random(1,9));
     }
     else if (track == F("07_blaster")) {
-      fileName += "0" + random(1,4);
+      fileName += "0" + String(random(1,5));
     }
-
 
     String fileExtension = F(".wav");
 
@@ -1635,9 +1679,15 @@ void HumRelaunch() {
       Serial.println("/" + folder + "/" + fileName + fileExtension);
     #endif
 
+    delay(50);
     audioFile = SD.open("/" + folder + "/" + fileName + fileExtension);
-    copier.~StreamCopy();
-    copier.begin(out, audioFile);
+
+    if (!audioFile) {
+      Serial.print("Audio file '");
+      Serial.print("/" + folder + "/" + fileName + fileExtension);
+      Serial.println("' doesn't exist. Returning!");
+    }
+    pwm.begin(config);
   }
 
   void LoopPlay_Sound(uint8_t track) {
@@ -1645,6 +1695,7 @@ void HumRelaunch() {
       Serial.print("Looping ");
       Serial.println(track);
     #endif
+
   }
 
   void Set_Volume(int8_t volumeSet) {
@@ -1667,22 +1718,18 @@ void HumRelaunch() {
     #endif
   }
 
-  void InitRawSoundSetup() {
-    #ifdef LS_INFO
-      Serial.println("Initializing raw sound system");
-    #endif
-  }
-
   void Pause_Sound() {
     #ifdef LS_INFO
       Serial.println("Pausing sound");
     #endif
+    copier.setActive(false);
   }
 
   void Resume_Sound() {
     #ifdef LS_INFO
       Serial.println("Resuming sound");
     #endif
+    copier.setActive(true);
   }
 #endif
 

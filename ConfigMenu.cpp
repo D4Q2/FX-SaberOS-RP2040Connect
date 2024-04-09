@@ -234,7 +234,8 @@ void NextConfigState(){
           SinglePlay_Sound(29);
         #elif defined(USE_RAW_SPEAKER)
           SinglePlay_Sound("029-sleepModeInit");
-        #endif        delay(500);
+        #endif
+        delay(500);
         break;   
 #ifdef BATTERY_CHECK        
       case CS_BATTERYLEVEL: 
@@ -264,7 +265,8 @@ void NextConfigState(){
           SinglePlay_Sound(27);
         #elif defined(USE_RAW_SPEAKER)
           SinglePlay_Sound("027-programingMode");
-        #endif        delay(500);
+        #endif
+        delay(500);
         Disable_MP3(true);
         //delay(1000);
         Disable_FTDI(false); // enable FTDI again

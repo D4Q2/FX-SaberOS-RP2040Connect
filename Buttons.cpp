@@ -221,12 +221,16 @@ void mainClick() {
       #if defined LS_BUTTON_DEBUG
             Serial.println(F("End motion triggered blaster bolt deflect"));
       #endif
-      HumRelaunch();
+      #ifdef USE_DFPLAYER
+        HumRelaunch();
+      #endif
       ActionModeSubStates=AS_HUM;
       accentLEDControl(AL_ON);
     }
     if (lockuponclash or tipmeltonclash) {
-      HumRelaunch();
+      #ifdef USE_DFPLAYER
+        HumRelaunch();
+      #endif
       ActionModeSubStates = AS_HUM;
       lockuponclash=false;
       tipmeltonclash=false;
@@ -320,7 +324,9 @@ void mainDoubleClick() {
 #ifdef SINGLEBUTTON
 	if (SaberState==S_SABERON) {
     if (lockuponclash or tipmeltonclash) {
-      HumRelaunch();
+      #ifdef USE_DFPLAYER
+        HumRelaunch();
+      #endif
       ActionModeSubStates = AS_HUM;
       lockuponclash=false;
       tipmeltonclash=false;

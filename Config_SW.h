@@ -132,8 +132,8 @@ It is important to note that this will take up some memory in proportion the the
  * BE VERY CAREFULL WITH THIS ONE OR 
  * YOU'LL BURN YOUR BLADE'S LED 
  ************************************/
-#define MAX_BRIGHTNESS    230
-#define FLICKERDEPTH 100
+#define MAX_BRIGHTNESS 75
+#define FLICKERDEPTH   35
 
 
 /* DEEP_SLEEP

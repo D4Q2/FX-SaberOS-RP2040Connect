@@ -1045,6 +1045,11 @@ void lightBlasterEffect(uint8_t ledPins[], uint8_t pixel, uint8_t range, uint16_
 } // lightBlasterEffect
 
 void pixelblade_KillKey_Enable() {
+  // Messing with these pins screws up the SD card
+  #if defined USE_RAW_SPEAKER
+    return;
+  #endif
+
   #if defined PIXELBLADE or defined ADF_PIXIE_BLADE
     #ifdef PIXELBLADE
       digitalWrite(DATA_PIN,HIGH); // in order not to back-connect GND over the Data pin to the stripes when the Low-Sides disconnect it
@@ -1064,13 +1069,18 @@ void pixelblade_KillKey_Enable() {
 }
 
 void pixelblade_KillKey_Disable() {
+  // Messing with these pins screws up the SD card
+  #if defined USE_RAW_SPEAKER
+    return;
+  #endif
+
   #if defined PIXELBLADE or defined ADF_PIXIE_BLADE
     // cut power to the neopixels stripes by disconnecting their GND signal using the LS pins
     #if defined DIYINO_STARDUST_V2 or defined DIYINO_STARDUST_V3
-    for (uint8_t j = 0; j < 3; j++) {
+      for (uint8_t j = 0; j < 3; j++) {
     #endif
     #ifdef DIYINO_PRIME  
-    for (uint8_t j = 0; j < 6; j++) {
+      for (uint8_t j = 0; j < 6; j++) {
     #endif
       digitalWrite(ledPins[j], HIGH);
     }
